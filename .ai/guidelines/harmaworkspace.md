@@ -1,6 +1,6 @@
 # HarmaWorkspace Project Guidelines
 
-HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular monolith: Laravel 13, MySQL, Livewire 4, Flux UI free, Fortify, Spatie Permission + Activitylog). The architecture blueprint is `docs/phase-0-blueprint.md`; the implemented foundation, conventions and ADRs are in `docs/phase-1-foundation.md` and `docs/phase-2-project-management.md`. Read them before building a module.
+HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular monolith: Laravel 13, MySQL, Livewire 4, Flux UI free, Fortify, Spatie Permission + Activitylog). The architecture blueprint is `docs/phase-0-blueprint.md`; the implemented foundation, conventions and ADRs are in `docs/phase-1-foundation.md`, `docs/phase-2-project-management.md` and `docs/phase-3-task-management.md`. Read them before building a module.
 
 ## Phase discipline
 - Work only on the current phase in `docs/phase-0-blueprint.md` §21. Do not build Project/Task/Ticket/Workflow/Approval/Gantt features ahead of their phase.
@@ -39,6 +39,10 @@ HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular
 - Project visibility (`restricted` default / `department` / `company`) is independent from the client relation and only controls viewing. It changes only via `ChangeProjectVisibility`; `company` requires `project.manage-visibility`.
 - Project status transitions are validated by `App\Domain\Project\Support\ProjectLifecycle` (by status code/flags, never names). Show available actions, not a free status dropdown. Completion = `CompleteProject`, archive = `ArchiveProject`.
 - Contextual Project Manager rights never cover administrative actions (archive, company visibility, master data). Confirm sensitive actions with `hwConfirm()` (SweetAlert2), never the browser `confirm()` or `wire:confirm`.
+- Task state changes only through `app/Domain/Task/Actions` (status via `ChangeTaskStatus` + `TaskLifecycle`, PIC/collaborators via `ManageTaskAssignments`, schedule via `ChangeTaskSchedule`, progress via `UpdateTaskProgress`). Every task change that can affect project progress calls `RecalculateProjectProgress`.
+- Task visibility has one source: `Task::scopeVisibleTo()` / `isVisibleTo()` (project tasks follow project visibility). Assigning a task never adds project members implicitly; validate through `TaskGuard`.
+- Task effective weight is defined once in `App\Domain\Task\Support\TaskWeight`; project task-weighted progress is computed only by `ProjectProgressCalculator`.
+- Tasks of archived/terminal projects are read-only: Actions throw, and the UI must check project state explicitly because the Super Admin bypass skips policies.
 - Important changes are recorded through `App\Domain\Audit\AuditLogger` with a semantic event code (`user.deactivated`, `role.updated`, ...). Never log passwords, tokens, or 2FA secrets.
 
 ## Database

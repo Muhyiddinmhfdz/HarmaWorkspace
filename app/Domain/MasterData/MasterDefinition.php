@@ -34,6 +34,7 @@ final readonly class MasterDefinition
         public ?MasterScope $scope = null,
         public array $fields = [],
         public array $exclusiveFlags = [],
+        public string $group = 'Project',
     ) {}
 
     public function table(): string

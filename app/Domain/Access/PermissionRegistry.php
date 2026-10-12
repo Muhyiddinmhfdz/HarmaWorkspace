@@ -40,6 +40,29 @@ class PermissionRegistry
     ];
 
     /**
+     * Permissions introduced in Phase 3 (granted once by a data migration).
+     *
+     * @var array<string, list<string>>
+     */
+    public const array PHASE_3_DEFAULTS = [
+        'Management' => [
+            'task.view',
+            'task.view-all',
+            'task.create',
+            'task.update',
+            'task.assign',
+            'task.manage-schedule',
+            'task.manage-progress',
+            'task.complete',
+            'task.cancel',
+        ],
+        'Staff' => [
+            'task.view',
+            'task.create',
+        ],
+    ];
+
+    /**
      * Permissions grouped by module, with an Indonesian description.
      *
      * @return array<string, array{label: string, permissions: array<string, string>}>
@@ -115,6 +138,20 @@ class PermissionRegistry
                     'project.complete' => 'Menyelesaikan atau membatalkan project',
                     'project.archive' => 'Mengarsipkan project yang sudah selesai',
                     'project.manage-visibility' => 'Membuka project untuk seluruh perusahaan (visibility Company)',
+                ],
+            ],
+            'task' => [
+                'label' => 'Tasks',
+                'permissions' => [
+                    'task.view' => 'Melihat task yang relevan (project yang terlihat, PIC, kolaborator, department)',
+                    'task.view-all' => 'Melihat seluruh task',
+                    'task.create' => 'Membuat task (standalone atau di project yang diikuti)',
+                    'task.update' => 'Mengubah informasi task',
+                    'task.assign' => 'Mengatur PIC dan kolaborator task',
+                    'task.manage-schedule' => 'Mengubah jadwal task',
+                    'task.manage-progress' => 'Mengubah progress dan status kerja task',
+                    'task.complete' => 'Menyelesaikan task (Done)',
+                    'task.cancel' => 'Membatalkan task',
                 ],
             ],
             'role' => [
@@ -199,12 +236,14 @@ class PermissionRegistry
                 'audit.view',
                 'settings.view',
                 ...self::PHASE_2_DEFAULTS['Management'],
+                ...self::PHASE_3_DEFAULTS['Management'],
             ],
             'Staff' => [
                 'dashboard.view',
                 'department.view',
                 'client.view',
                 ...self::PHASE_2_DEFAULTS['Staff'],
+                ...self::PHASE_3_DEFAULTS['Staff'],
             ],
         ];
     }

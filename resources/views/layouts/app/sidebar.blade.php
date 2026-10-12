@@ -3,6 +3,7 @@
     $navigation = app(\App\Domain\System\Navigation\Navigation::class)->for($user);
     $subtitle = app(\App\Domain\System\Settings\Settings::class)->get(\App\Domain\System\Settings\SettingKey::AppSubtitle);
     $createItems = array_values(array_filter([
+        $user->can('create', \App\Models\Task::class) ? ['label' => 'New Task', 'icon' => 'plus-circle', 'url' => route('tasks.create')] : null,
         $user->can('project.create') ? ['label' => 'New Project', 'icon' => 'folder-plus', 'url' => route('projects.create')] : null,
         $user->can('user.create') ? ['label' => 'New Member', 'icon' => 'user-plus', 'url' => route('admin.users.create')] : null,
         $user->can('department.create') ? ['label' => 'New Department', 'icon' => 'building-office-2', 'url' => route('admin.departments.index', ['create' => 1])] : null,

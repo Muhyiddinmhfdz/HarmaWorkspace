@@ -4,6 +4,7 @@ use App\Models\Client;
 use App\Models\Department;
 use App\Models\Position;
 use App\Models\Project;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
@@ -104,6 +105,23 @@ Route::middleware('auth')->group(function () {
     Route::livewire('projects/{project}/edit', 'pages::projects.edit')
         ->middleware('can:update,project')
         ->name('projects.edit');
+
+    // Tasks
+    Route::livewire('my-tasks', 'pages::tasks.mine')
+        ->middleware('can:viewAny,'.Task::class)
+        ->name('tasks.mine');
+    Route::livewire('tasks', 'pages::tasks.index')
+        ->middleware('can:viewAny,'.Task::class)
+        ->name('tasks.index');
+    Route::livewire('tasks/create', 'pages::tasks.create')
+        ->middleware('can:viewAny,'.Task::class)
+        ->name('tasks.create');
+    Route::livewire('tasks/{task}', 'pages::tasks.show')
+        ->middleware('can:view,task')
+        ->name('tasks.show');
+    Route::livewire('tasks/{task}/edit', 'pages::tasks.edit')
+        ->middleware('can:update,task')
+        ->name('tasks.edit');
 
     Route::livewire('settings', 'pages::settings.index')
         ->middleware('can:settings.view')

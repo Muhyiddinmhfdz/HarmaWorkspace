@@ -32,8 +32,12 @@ new class extends Component {
     {
         return Activity::query()
             ->inLog(AuditLogger::LOG_NAME)
-            ->where('subject_type', 'project')
-            ->where('subject_id', $this->projectId)
+            ->where(fn ($query) => $query
+                ->where(fn ($query) => $query->where('subject_type', 'project')->where('subject_id', $this->projectId))
+                ->orWhere(fn ($query) => $query
+                    ->where('subject_type', 'task')
+                    ->whereIn('event', \App\Domain\Task\Support\TaskAudit::PROJECT_EVENTS)
+                    ->where('properties->project_id', $this->projectId)))
             ->with('causer:id,name')
             ->latest('id')
             ->limit($this->limit + 1)

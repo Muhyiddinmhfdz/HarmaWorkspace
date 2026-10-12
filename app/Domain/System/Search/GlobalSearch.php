@@ -5,13 +5,14 @@ namespace App\Domain\System\Search;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\Project;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Global search across the modules available so far. Each source is only
  * searched when the user may view it, and uses the same visibility rules as
- * the module's list page. Tasks and tickets join in later phases.
+ * the module's list page. Tickets join in Phase 4.
  */
 class GlobalSearch
 {
@@ -45,6 +46,24 @@ class GlobalSearch
                         'title' => $found->name,
                         'subtitle' => $found->number,
                         'url' => route('projects.show', $found),
+                    ])
+                    ->all()),
+            ];
+        }
+
+        if ($user->can('viewAny', Task::class)) {
+            $results[] = [
+                'group' => 'Tasks',
+                'items' => array_values(Task::query()
+                    ->visibleTo($user)
+                    ->where(fn (Builder $query) => $query->where('number', 'like', $like)->orWhere('title', 'like', $like))
+                    ->orderByDesc('id')
+                    ->limit(self::LIMIT_PER_GROUP)
+                    ->get(['id', 'number', 'title'])
+                    ->map(fn (Task $found): array => [
+                        'title' => $found->title,
+                        'subtitle' => $found->number,
+                        'url' => route('tasks.show', $found),
                     ])
                     ->all()),
             ];

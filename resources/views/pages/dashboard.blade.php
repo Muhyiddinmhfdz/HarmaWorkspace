@@ -8,6 +8,7 @@ use App\Models\DepartmentMembership;
 use App\Models\Project;
 use App\Models\ProjectHealthStatus;
 use App\Models\ProjectMilestone;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -25,6 +26,60 @@ new #[Title('Dashboard')] class extends Component {
             now()->hour < 18 => 'Selamat sore',
             default => 'Selamat malam',
         };
+    }
+
+    #[Computed]
+    public function canSeeTasks(): bool
+    {
+        return Auth::user()->can('viewAny', Task::class);
+    }
+
+    /**
+     * Open tasks the user is assigned to (PIC or collaborator), visible only.
+     *
+     * @return Builder<Task>
+     */
+    private function myOpenTasks(): Builder
+    {
+        return Task::query()->visibleTo(Auth::user())->assignedTo(Auth::user())->open();
+    }
+
+    /**
+     * Actionable task counters (always the user's own tasks).
+     *
+     * @return list<array{label: string, value: int, icon: string, url: string, tone?: string}>
+     */
+    #[Computed]
+    public function taskCards(): array
+    {
+        if (! $this->canSeeTasks) {
+            return [];
+        }
+
+        return [
+            ['label' => 'My Open Tasks', 'value' => $this->myOpenTasks()->count(), 'icon' => 'check-circle', 'url' => route('tasks.mine')],
+            ['label' => 'Due Today', 'value' => $this->myOpenTasks()->whereDate('current_end', today())->count(), 'icon' => 'calendar', 'url' => route('tasks.mine', ['view' => 'due_today']), 'tone' => 'amber'],
+            ['label' => 'Overdue', 'value' => $this->myOpenTasks()->overdue()->count(), 'icon' => 'clock', 'url' => route('tasks.mine', ['view' => 'overdue']), 'tone' => 'red'],
+            ['label' => 'Blocked', 'value' => Task::query()->visibleTo(Auth::user())->assignedTo(Auth::user())->blocked()->count(), 'icon' => 'no-symbol', 'url' => route('tasks.mine', ['view' => 'blocked']), 'tone' => 'red'],
+        ];
+    }
+
+    /**
+     * @return Collection<int, Task>
+     */
+    #[Computed]
+    public function myTasks(): Collection
+    {
+        if (! $this->canSeeTasks) {
+            return collect();
+        }
+
+        return $this->myOpenTasks()
+            ->with(['status', 'project:id,name'])
+            ->orderByRaw('current_end IS NULL ASC')
+            ->orderBy('current_end')
+            ->limit(6)
+            ->get();
     }
 
     #[Computed]
@@ -67,7 +122,12 @@ new #[Title('Dashboard')] class extends Component {
                 });
         }
 
-        if ($user->can('user.view')) {
+        if ($user->can('task.view-all')) {
+            $cards[] = ['label' => 'Overdue Tasks (all)', 'value' => Task::query()->overdue()->count(), 'icon' => 'clock', 'url' => route('tasks.index', ['view' => 'overdue']), 'tone' => 'red'];
+            $cards[] = ['label' => 'Blocked Tasks (all)', 'value' => Task::query()->blocked()->count(), 'icon' => 'no-symbol', 'url' => route('tasks.index', ['view' => 'blocked']), 'tone' => 'red'];
+        }
+
+        if ($user->can('user.view') && count($cards) < 4) {
             $cards[] = ['label' => 'Active Members', 'value' => User::query()->active()->count(), 'icon' => 'users', 'url' => route('admin.users.index', ['status' => 'active'])];
         }
 
@@ -173,6 +233,21 @@ new #[Title('Dashboard')] class extends Component {
 <div class="mx-auto w-full max-w-6xl">
     <x-ui.page-header :title="$this->greeting().', '.auth()->user()->name" description="Berikut ringkasan workspace Anda hari ini." />
 
+    @if ($this->taskCards !== [])
+        <div class="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            @foreach ($this->taskCards as $card)
+                <a href="{{ $card['url'] }}" wire:navigate wire:key="task-card-{{ $loop->index }}"
+                   class="group rounded-xl border border-zinc-200 bg-white p-5 transition hover:border-zinc-300">
+                    <div class="flex items-center justify-between">
+                        <flux:text>{{ $card['label'] }}</flux:text>
+                        <flux:icon :icon="$card['icon']" @class(['size-5', 'text-zinc-400' => ! isset($card['tone']) || $card['value'] === 0, 'text-amber-500' => ($card['tone'] ?? null) === 'amber' && $card['value'] > 0, 'text-red-500' => ($card['tone'] ?? null) === 'red' && $card['value'] > 0]) />
+                    </div>
+                    <div @class(['mt-3 text-3xl font-semibold tracking-tight', 'text-red-600' => ($card['tone'] ?? null) === 'red' && $card['value'] > 0, 'text-zinc-900' => ($card['tone'] ?? null) !== 'red' || $card['value'] === 0])>{{ number_format($card['value']) }}</div>
+                </a>
+            @endforeach
+        </div>
+    @endif
+
     @if ($this->summary !== [])
         <div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             @foreach ($this->summary as $card)
@@ -190,6 +265,31 @@ new #[Title('Dashboard')] class extends Component {
 
     <div class="grid gap-6 lg:grid-cols-3">
         <div class="space-y-6 lg:col-span-2">
+            @if ($this->canSeeTasks)
+                <flux:card class="p-0!">
+                    <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+                        <flux:heading size="lg">My Tasks</flux:heading>
+                        <flux:link :href="route('tasks.mine')" wire:navigate class="text-sm">Lihat semua</flux:link>
+                    </div>
+                    @forelse ($this->myTasks as $task)
+                        <a href="{{ route('tasks.show', $task) }}" wire:navigate wire:key="mt-{{ $task->id }}" class="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-zinc-100 px-5 py-3 last:border-b-0 hover:bg-zinc-50 sm:grid-cols-[1fr_7rem_8rem]">
+                            <div class="min-w-0">
+                                <div class="truncate text-sm font-medium text-zinc-900">{{ $task->title }}</div>
+                                <div class="truncate text-xs text-zinc-500">{{ $task->number }} · {{ $task->project->name ?? 'Standalone' }}</div>
+                            </div>
+                            <x-ui.progress-bar :value="$task->progress_percentage" class="max-sm:hidden" />
+                            @if ($task->current_end)
+                                <x-ui.deadline :date="$task->current_end" class="text-end" />
+                            @else
+                                <span class="text-end text-xs text-zinc-400">No deadline</span>
+                            @endif
+                        </a>
+                    @empty
+                        <x-ui.empty-state icon="check-circle" title="Tidak ada task terbuka" description="Task yang Anda pegang sebagai PIC atau kolaborator akan muncul di sini." class="py-10" />
+                    @endforelse
+                </flux:card>
+            @endif
+
             @if ($this->canSeeProjects)
                 <flux:card class="p-0!">
                     <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
@@ -306,7 +406,7 @@ new #[Title('Dashboard')] class extends Component {
 
             <div class="rounded-xl border border-dashed border-zinc-300 p-5">
                 <flux:heading>Coming soon</flux:heading>
-                <flux:text class="mt-1">Tasks (Phase 3) dan Tickets (Phase 4) akan muncul di dashboard ini.</flux:text>
+                <flux:text class="mt-1">Tickets dan Department Inbox (Phase 4) akan muncul di dashboard ini.</flux:text>
             </div>
         </div>
     </div>

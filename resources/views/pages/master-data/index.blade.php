@@ -55,22 +55,24 @@ new #[Title('Master Data')] class extends Component {
         }
 
         if ($user->can('master-data.view')) {
-            $projectItems = [];
+            foreach (collect(MasterRegistry::all())->groupBy(fn ($definition) => $definition->group) as $heading => $definitions) {
+                $items = [];
 
-            foreach (MasterRegistry::all() as $definition) {
-                $query = $definition->model::query()->when($definition->scope !== null, fn ($query) => $query->where('scope', $definition->scope?->value));
+                foreach ($definitions as $definition) {
+                    $query = $definition->model::query()->when($definition->scope !== null, fn ($query) => $query->where('scope', $definition->scope?->value));
 
-                $projectItems[] = [
-                    'label' => $definition->label,
-                    'description' => $definition->description,
-                    'icon' => $definition->icon,
-                    'url' => route('master-data.manage', $definition->key),
-                    'active' => (clone $query)->where('is_active', true)->count(),
-                    'total' => $query->count(),
-                ];
+                    $items[] = [
+                        'label' => $definition->label,
+                        'description' => $definition->description,
+                        'icon' => $definition->icon,
+                        'url' => route('master-data.manage', $definition->key),
+                        'active' => (clone $query)->where('is_active', true)->count(),
+                        'total' => $query->count(),
+                    ];
+                }
+
+                $groups[] = ['heading' => $heading, 'items' => $items];
             }
-
-            $groups[] = ['heading' => 'Project', 'items' => $projectItems];
         }
 
         return $groups;
@@ -84,7 +86,6 @@ new #[Title('Master Data')] class extends Component {
     public function upcoming(): array
     {
         return [
-            ['heading' => 'Task', 'phase' => 'Phase 3', 'items' => ['Task Type', 'Task Status', 'Task Priority']],
             ['heading' => 'Ticket', 'phase' => 'Phase 4', 'items' => ['Ticket Type', 'Ticket Category', 'Ticket Status', 'Ticket Priority', 'Resolution']],
         ];
     }

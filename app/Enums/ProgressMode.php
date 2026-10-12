@@ -9,4 +9,12 @@ enum ProgressMode: string
 
     /** Progress derived from weighted tasks (Phase 3). */
     case TaskWeighted = 'task_weighted';
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::Manual => 'Manual',
+            self::TaskWeighted => 'Based on Tasks',
+        };
+    }
 }

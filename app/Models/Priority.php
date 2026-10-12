@@ -59,6 +59,7 @@ class Priority extends Model
     {
         return match ($this->scope) {
             MasterScope::Project => Project::query()->where('priority_id', $this->id)->exists(),
+            MasterScope::Task => Task::query()->where('priority_id', $this->id)->exists(),
             default => false,
         };
     }

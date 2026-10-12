@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Domain\System\Settings\Settings;
 use App\Listeners\RecordLastLogin;
+use App\Models\ChecklistItem;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\DepartmentMembership;
@@ -18,6 +19,11 @@ use App\Models\ProjectMilestone;
 use App\Models\ProjectRole;
 use App\Models\Setting;
 use App\Models\Status;
+use App\Models\Task;
+use App\Models\TaskAssignment;
+use App\Models\TaskCategory;
+use App\Models\TaskSubtask;
+use App\Models\TaskType;
 use App\Models\User;
 use App\Policies\RolePolicy;
 use Carbon\CarbonImmutable;
@@ -94,6 +100,12 @@ class AppServiceProvider extends ServiceProvider
             'project_department' => ProjectDepartment::class,
             'project_member' => ProjectMember::class,
             'project_milestone' => ProjectMilestone::class,
+            'task' => Task::class,
+            'task_type' => TaskType::class,
+            'task_category' => TaskCategory::class,
+            'task_assignment' => TaskAssignment::class,
+            'task_subtask' => TaskSubtask::class,
+            'checklist_item' => ChecklistItem::class,
             'role' => Role::class,
             'permission' => Permission::class,
         ]);
@@ -109,6 +121,7 @@ class AppServiceProvider extends ServiceProvider
         Route::model('client', Client::class);
         Route::model('role', Role::class);
         Route::model('project', Project::class);
+        Route::model('task', Task::class);
     }
 
     protected function configureAuthorization(): void

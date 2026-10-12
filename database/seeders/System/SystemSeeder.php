@@ -15,6 +15,7 @@ class SystemSeeder extends Seeder
         $this->call([
             PermissionSeeder::class,
             ProjectMasterSeeder::class,
+            TaskMasterSeeder::class,
             SuperAdminSeeder::class,
         ]);
     }

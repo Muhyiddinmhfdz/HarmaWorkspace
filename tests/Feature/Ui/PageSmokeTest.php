@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\DepartmentMembership;
 use App\Models\Position;
 use App\Models\Project;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -56,6 +57,14 @@ class PageSmokeTest extends TestCase
             'master project categories' => ['master-data.manage', 'project-categories'],
             'master project roles' => ['master-data.manage', 'project-roles'],
             'master project health' => ['master-data.manage', 'project-health'],
+            'project tasks tab' => ['projects.show', 'tasks'],
+            'tasks' => ['tasks.index'],
+            'my tasks' => ['tasks.mine'],
+            'task create' => ['tasks.create'],
+            'task show' => ['tasks.show'],
+            'task edit' => ['tasks.edit'],
+            'master task statuses' => ['master-data.manage', 'task-statuses'],
+            'master task types' => ['master-data.manage', 'task-types'],
         ];
     }
 
@@ -74,6 +83,7 @@ class PageSmokeTest extends TestCase
         $client = Client::factory()->create();
         $project = Project::factory()->create(['client_id' => $client->id]);
         $project->milestones()->forceCreate(['name' => 'Go Live', 'planned_date' => today()->addWeek(), 'current_due_date' => today()->addWeek()]);
+        $task = Task::factory()->create(['project_id' => $project->id, 'department_id' => $project->leadDepartment()->value('department_id'), 'current_end' => today()->addDays(3)]);
 
         $parameters = match ($routeName) {
             'admin.users.show', 'admin.users.edit' => ['user' => $member],
@@ -83,6 +93,7 @@ class PageSmokeTest extends TestCase
             'projects.show' => ['project' => $project, 'tab' => $variant ?? 'overview'],
             'projects.edit' => ['project' => $project],
             'master-data.manage' => ['type' => $variant],
+            'tasks.show', 'tasks.edit' => ['task' => $task],
             default => [],
         };
 

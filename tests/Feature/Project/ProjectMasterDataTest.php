@@ -50,7 +50,7 @@ class ProjectMasterDataTest extends TestCase
             ->call('save')
             ->assertHasErrors(['form.code' => 'unique']);
 
-        $this->assertSame(MasterScope::Project, Status::query()->where('name', 'In Review')->sole()->scope);
+        $this->assertTrue(Status::query()->forScope(MasterScope::Project)->where('code', 'REVIEW')->where('name', 'In Review')->exists());
     }
 
     public function test_generic_page_only_lists_project_scoped_records(): void

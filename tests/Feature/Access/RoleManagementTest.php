@@ -34,7 +34,7 @@ class RoleManagementTest extends TestCase
         $this->actingAs($this->superAdmin());
 
         Livewire::test('pages::admin.roles.form', ['role' => $role])
-            ->set('permissions', ['dashboard.view', 'client.view', 'client.create', 'project.view'])
+            ->set('permissions', ['dashboard.view', 'client.view', 'client.create', 'project.view', 'task.view', 'task.create'])
             ->call('save')
             ->assertHasNoErrors();
 

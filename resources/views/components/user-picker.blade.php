@@ -32,6 +32,15 @@ new class extends Component {
     public array $exclude = [];
 
     /**
+     * When set, only these users can be picked (e.g. active project members).
+     *
+     * @var list<int>|null
+     */
+    public ?array $only = null;
+
+    public ?string $emptyHint = null;
+
+    /**
      * @return Collection<int, User>
      */
     #[Computed]
@@ -43,6 +52,7 @@ new class extends Component {
         return User::query()
             ->active()
             ->whereNotIn('id', $this->exclude)
+            ->when($this->only !== null, fn ($query) => $query->whereIn('id', $this->only))
             ->when($term !== '', fn ($query) => $query->where(fn ($query) => $query->where('name', 'like', $like)->orWhere('username', 'like', $like)))
             ->with('primaryMembership.department:id,name')
             ->orderBy('name')
@@ -104,7 +114,7 @@ new class extends Component {
                     </div>
                 </button>
             @empty
-                <div class="px-3 py-3 text-sm text-zinc-500">Tidak ada user aktif yang cocok.</div>
+                <div class="px-3 py-3 text-sm text-zinc-500">{{ $only !== null && $emptyHint ? $emptyHint : 'Tidak ada user aktif yang cocok.' }}</div>
             @endforelse
         </div>
     @endif

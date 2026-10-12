@@ -11,6 +11,7 @@ use App\Enums\ProgressMode;
 use App\Models\Project;
 use App\Models\ProjectHealthStatus;
 use App\Models\Status;
+use App\Models\Task;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Date;
@@ -18,7 +19,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Complete a project: completion status, actual end date, 100% manual progress
- * and the completion health. Phase 3 will add task checks here.
+ * and the completion health. Every task must be finished (completed or
+ * cancelled) first (ADR-047).
  */
 class CompleteProject
 {
@@ -47,6 +49,8 @@ class CompleteProject
             if (! $this->lifecycle->allows($project->status, $status)) {
                 throw new BusinessRuleException($this->lifecycle->rejectionMessage($project->status, $status));
             }
+
+            $this->ensureNoActiveTasks($project);
 
             $actualStart = $project->actual_start ?? $project->current_start;
 
@@ -77,5 +81,28 @@ class CompleteProject
 
             return $project;
         });
+    }
+
+    /**
+     * Blocks completion while tasks are still open, with a per-status summary.
+     */
+    private function ensureNoActiveTasks(Project $project): void
+    {
+        $open = Task::query()
+            ->where('project_id', $project->id)
+            ->open()
+            ->join('statuses', 'statuses.id', '=', 'tasks.status_id')
+            ->selectRaw('statuses.name, COUNT(*) as aggregate')
+            ->groupBy('statuses.id', 'statuses.name', 'statuses.sort_order')
+            ->orderBy('statuses.sort_order')
+            ->pluck('aggregate', 'name');
+
+        if ($open->isEmpty()) {
+            return;
+        }
+
+        $details = $open->map(fn ($count, string $name): string => $count.' Task masih '.$name)->implode(', ');
+
+        throw new BusinessRuleException('Project belum dapat diselesaikan karena masih terdapat '.$open->sum().' Task aktif: '.$details.'.');
     }
 }

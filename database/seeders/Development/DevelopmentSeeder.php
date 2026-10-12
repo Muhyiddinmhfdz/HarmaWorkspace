@@ -3,13 +3,18 @@
 namespace Database\Seeders\Development;
 
 use App\Domain\Organization\Actions\CreateUser;
+use App\Domain\Project\Actions\ChangeProjectProgressMode;
 use App\Domain\Project\Actions\ChangeProjectStatus;
 use App\Domain\Project\Actions\CreateProject;
 use App\Domain\Project\Actions\ManageProjectMembers;
 use App\Domain\Project\Actions\ManageProjectMilestones;
 use App\Domain\Project\Actions\UpdateProjectHealth;
 use App\Domain\Project\Actions\UpdateProjectProgress;
+use App\Domain\Task\Actions\ChangeTaskStatus;
+use App\Domain\Task\Actions\CreateTask;
+use App\Domain\Task\Actions\UpdateTaskProgress;
 use App\Enums\MasterScope;
+use App\Enums\ProgressMode;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\Position;
@@ -19,6 +24,9 @@ use App\Models\ProjectCategory;
 use App\Models\ProjectHealthStatus;
 use App\Models\ProjectRole;
 use App\Models\Status;
+use App\Models\Task;
+use App\Models\TaskCategory;
+use App\Models\TaskType;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -92,6 +100,95 @@ class DevelopmentSeeder extends Seeder
         }
 
         $this->seedProjects($departments->all());
+        $this->seedTasks();
+    }
+
+    /**
+     * Demo task masters and tasks, created through the domain actions.
+     */
+    private function seedTasks(): void
+    {
+        foreach (['Feature', 'Bug Fix', 'Improvement', 'Maintenance', 'Research', 'Documentation', 'Testing', 'Operational'] as $index => $name) {
+            TaskType::query()->firstOrCreate(['code' => strtoupper(str_replace(' ', '_', $name))], ['name' => $name, 'sort_order' => ($index + 1) * 10]);
+        }
+
+        foreach (['Development', 'UI/UX', 'Quality Assurance', 'Support', 'Infrastructure', 'Administration'] as $index => $name) {
+            TaskCategory::query()->firstOrCreate(['code' => strtoupper(preg_replace('/[^A-Za-z]+/', '_', $name))], ['name' => $name, 'sort_order' => ($index + 1) * 10]);
+        }
+
+        if (Task::query()->exists()) {
+            return;
+        }
+
+        $actor = User::role(config('harma.super_admin_role'))->first() ?? User::query()->firstOrFail();
+        $status = fn (string $code): int => (int) Status::query()->forScope(MasterScope::Task)->where('code', $code)->value('id');
+        $priority = fn (string $code): int => (int) Priority::query()->forScope(MasterScope::Task)->where('code', $code)->value('id');
+        $type = fn (string $code): ?int => TaskType::query()->where('code', $code)->value('id');
+        // Target status => [steps before the progress update, steps after it, blocked reason].
+        $path = [
+            'TODO' => [['TODO'], [], null],
+            'IN_PROGRESS' => [['TODO', 'IN_PROGRESS'], [], null],
+            'BLOCKED' => [['TODO', 'IN_PROGRESS'], ['BLOCKED'], 'Menunggu driver printer dari vendor.'],
+            'IN_REVIEW' => [['TODO', 'IN_PROGRESS'], ['IN_REVIEW'], null],
+            'DONE' => [['TODO', 'IN_PROGRESS'], ['IN_REVIEW', 'DONE'], null],
+        ];
+
+        $pos = Project::query()->where('name', 'POS Development')->first();
+
+        if ($pos !== null) {
+            $departmentOf = fn (string $code): int => (int) Department::query()->where('code', $code)->value('id');
+            $pm = $pos->project_manager_id;
+            $dewi = (int) User::query()->where('username', 'dewi')->value('id');
+            $sari = (int) User::query()->where('username', 'sari')->value('id');
+
+            $tasks = [
+                ['Desain UI kasir', 'UIUX', $dewi, 'DONE', 100, 12, 'FEATURE', -8],
+                ['API Penjualan', 'DEV', $pm, 'IN_PROGRESS', 60, 24, 'FEATURE', 5],
+                ['Integrasi printer struk', 'DEV', $pm, 'BLOCKED', 30, 8, 'FEATURE', 3],
+                ['Test skenario pembayaran', 'QA', $sari, 'TODO', 0, 10, 'TESTING', 12],
+                ['Setup server staging', 'TS', $sari, 'IN_REVIEW', 90, 6, 'MAINTENANCE', -1],
+            ];
+
+            foreach ($tasks as [$title, $dept, $pic, $target, $progress, $hours, $typeCode, $dueOffset]) {
+                $task = app(CreateTask::class)->handle([
+                    'title' => $title,
+                    'project_id' => $pos->id,
+                    'department_id' => $departmentOf($dept),
+                    'pic_user_id' => $pic,
+                    'priority_id' => $priority($target === 'BLOCKED' ? 'HIGH' : 'NORMAL'),
+                    'task_type_id' => $type($typeCode),
+                    'due_date' => now()->addDays($dueOffset)->toDateString(),
+                    'estimated_hours' => $hours,
+                ], $actor);
+
+                [$before, $after, $reason] = $path[$target];
+
+                foreach ($before as $step) {
+                    app(ChangeTaskStatus::class)->handle($task->refresh(), $status($step), $actor);
+                }
+
+                if ($progress > 0 && $target !== 'DONE') {
+                    app(UpdateTaskProgress::class)->handle($task->refresh(), $progress, $actor);
+                }
+
+                foreach ($after as $step) {
+                    app(ChangeTaskStatus::class)->handle($task->refresh(), $status($step), $actor, $reason);
+                }
+            }
+
+            app(ChangeProjectProgressMode::class)->handle($pos->refresh(), ProgressMode::TaskWeighted, $actor);
+        }
+
+        // A standalone operational task.
+        app(CreateTask::class)->handle([
+            'title' => 'Verifikasi backup harian server',
+            'department_id' => (int) Department::query()->where('code', 'TS')->value('id'),
+            'pic_user_id' => (int) User::query()->where('username', 'sari')->value('id'),
+            'priority_id' => $priority('NORMAL'),
+            'task_type_id' => $type('OPERATIONAL'),
+            'due_date' => now()->toDateString(),
+            'estimated_hours' => 0.5,
+        ], $actor);
     }
 
     /**

@@ -2,6 +2,7 @@
 
 use App\Domain\Audit\AuditLogger;
 use App\Domain\Project\Actions\ArchiveProject;
+use App\Domain\Project\Actions\ChangeProjectProgressMode;
 use App\Domain\Project\Actions\ChangeProjectSchedule;
 use App\Domain\Project\Actions\ChangeProjectStatus;
 use App\Domain\Project\Actions\ChangeProjectVisibility;
@@ -9,6 +10,7 @@ use App\Domain\Project\Actions\CompleteProject;
 use App\Domain\Project\Actions\UpdateProjectHealth;
 use App\Domain\Project\Actions\UpdateProjectProgress;
 use App\Domain\Project\Support\ProjectLifecycle;
+use App\Domain\Project\Support\ProjectProgressCalculator;
 use App\Domain\Project\Support\VisibilityGuard;
 use App\Enums\ProgressMode;
 use App\Enums\ProjectVisibility;
@@ -18,6 +20,7 @@ use App\Models\Project;
 use App\Models\ProjectHealthStatus;
 use App\Models\ProjectMilestone;
 use App\Models\Status;
+use App\Models\Task;
 use Flux\Flux;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -29,7 +32,7 @@ use Livewire\Component;
 new class extends Component {
     use WithFeedback;
 
-    public const array TABS = ['overview' => 'Overview', 'milestones' => 'Milestones', 'team' => 'Team', 'activity' => 'Activity'];
+    public const array TABS = ['overview' => 'Overview', 'tasks' => 'Tasks', 'milestones' => 'Milestones', 'team' => 'Team', 'activity' => 'Activity'];
 
     #[Locked]
     public int $projectId;
@@ -39,6 +42,8 @@ new class extends Component {
 
     // Modal forms
     public string $visibility = '';
+
+    public string $progressMode = '';
 
     public int $progress = 0;
 
@@ -68,7 +73,7 @@ new class extends Component {
     #[On('project-updated')]
     public function refreshProject(): void
     {
-        unset($this->project, $this->can, $this->transitions, $this->upcomingMilestones, $this->recentActivity, $this->lastScheduleChange);
+        unset($this->project, $this->can, $this->transitions, $this->upcomingMilestones, $this->recentActivity, $this->lastScheduleChange, $this->taskSummary, $this->departmentProgress, $this->upcomingTasks, $this->canCompleteNow);
     }
 
     #[Computed]
@@ -135,6 +140,60 @@ new class extends Component {
             ->get();
     }
 
+    /**
+     * Task counters from status flags (never names).
+     *
+     * @return array{total: int, done: int, in_progress: int, blocked: int, overdue: int, counted: int}
+     */
+    #[Computed]
+    public function taskSummary(): array
+    {
+        $row = Task::query()
+            ->where('tasks.project_id', $this->projectId)
+            ->join('statuses', 'statuses.id', '=', 'tasks.status_id')
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw('SUM(statuses.counts_as_completed) as done')
+            ->selectRaw('SUM(statuses.counts_as_started AND NOT statuses.is_terminal AND NOT statuses.is_blocked) as in_progress')
+            ->selectRaw('SUM(statuses.is_blocked) as blocked')
+            ->selectRaw('SUM(NOT statuses.is_terminal AND tasks.current_end < ?) as overdue', [today()->toDateString()])
+            ->selectRaw('SUM(NOT statuses.is_terminal OR statuses.counts_as_completed) as counted')
+            ->first();
+
+        return [
+            'total' => (int) ($row->total ?? 0),
+            'done' => (int) ($row->done ?? 0),
+            'in_progress' => (int) ($row->in_progress ?? 0),
+            'blocked' => (int) ($row->blocked ?? 0),
+            'overdue' => (int) ($row->overdue ?? 0),
+            'counted' => (int) ($row->counted ?? 0),
+        ];
+    }
+
+    /**
+     * @return Collection<int, array{department_id: int, name: string, is_lead: bool, progress: int, tasks: int}>
+     */
+    #[Computed]
+    public function departmentProgress(): Collection
+    {
+        return app(ProjectProgressCalculator::class)->byDepartment($this->project);
+    }
+
+    /**
+     * @return Collection<int, Task>
+     */
+    #[Computed]
+    public function upcomingTasks(): Collection
+    {
+        return Task::query()
+            ->where('project_id', $this->projectId)
+            ->open()
+            ->with(['status', 'picAssignment.user:id,name'])
+            ->orderByRaw('current_end IS NULL ASC')
+            ->orderBy('current_end')
+            ->limit(5)
+            ->get();
+    }
+
     #[Computed]
     public function lastScheduleChange(): ?\App\Models\ScheduleChange
     {
@@ -193,6 +252,26 @@ new class extends Component {
         $changeStatus->handle($this->project, $target->id, auth()->user());
 
         $this->notify('success', 'Status project diubah menjadi '.$target->name.'.');
+        $this->refreshProject();
+    }
+
+    public function openProgressMode(): void
+    {
+        abort_unless($this->can['progress'], 403);
+        $this->progressMode = $this->project->progress_mode->value;
+        Flux::modal('project-progress-mode')->show();
+    }
+
+    public function saveProgressMode(ChangeProjectProgressMode $changeMode): void
+    {
+        $this->authorize('manageProgress', $this->project);
+        $this->validate(['progressMode' => ['required', \Illuminate\Validation\Rule::enum(ProgressMode::class)]]);
+
+        $mode = ProgressMode::from($this->progressMode);
+        $changeMode->handle($this->project, $mode, auth()->user());
+
+        Flux::modal('project-progress-mode')->close();
+        $this->notify('success', $mode === ProgressMode::TaskWeighted ? 'Progress project kini dihitung otomatis dari Task.' : 'Progress project kini diisi manual.');
         $this->refreshProject();
     }
 
@@ -380,6 +459,7 @@ new class extends Component {
                                     <flux:menu.item icon="chart-bar" wire:click="openProgress">Update progress</flux:menu.item>
                                 @endif
                                 <flux:menu.item icon="heart" wire:click="openHealth">Update health</flux:menu.item>
+                                <flux:menu.item icon="calculator" wire:click="openProgressMode">Progress calculation</flux:menu.item>
                             @endif
                             @if ($can['visibility'])
                                 <flux:menu.item icon="eye" wire:click="openVisibility">Change visibility</flux:menu.item>
@@ -413,6 +493,11 @@ new class extends Component {
                 <span class="font-semibold tabular-nums text-zinc-900">{{ $project->progress_percentage }}% complete</span>
             </div>
             <x-ui.progress-bar :value="$project->progress_percentage" :show-label="false" />
+            <div class="mt-1 text-xs text-zinc-500">
+                {{ $project->progress_mode === \App\Enums\ProgressMode::TaskWeighted
+                    ? ($this->taskSummary['counted'] > 0 ? 'Calculated from '.$this->taskSummary['counted'].' active tasks' : 'Belum ada Task aktif untuk menghitung progress.')
+                    : 'Manual' }}
+            </div>
         </div>
     </div>
 
@@ -453,8 +538,52 @@ new class extends Component {
     </div>
 
     @if ($tab === 'overview')
+        @php($summary = $this->taskSummary)
+        <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
+            @foreach ([
+                ['Total', $summary['total'], 'text-zinc-900', 'all'],
+                ['Done', $summary['done'], 'text-green-700', 'completed'],
+                ['In Progress', $summary['in_progress'], 'text-blue-700', 'open'],
+                ['Blocked', $summary['blocked'], $summary['blocked'] > 0 ? 'text-red-600' : 'text-zinc-900', 'blocked'],
+                ['Overdue', $summary['overdue'], $summary['overdue'] > 0 ? 'text-red-600' : 'text-zinc-900', 'overdue'],
+            ] as [$label, $value, $tone, $view])
+                <a href="{{ route('projects.show', ['project' => $project, 'tab' => 'tasks', 'view' => $view]) }}" wire:navigate wire:key="ts-{{ $loop->index }}"
+                   class="rounded-xl border border-zinc-200 bg-white px-4 py-3 hover:border-zinc-300">
+                    <div class="text-xs text-zinc-500">{{ $label }}</div>
+                    <div class="mt-1 text-2xl font-semibold tabular-nums {{ $tone }}">{{ $value }}</div>
+                </a>
+            @endforeach
+        </div>
+
         <div class="grid gap-6 lg:grid-cols-3">
             <div class="space-y-6 lg:col-span-2">
+                <flux:card class="p-0!">
+                    <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+                        <flux:heading size="lg">Upcoming Tasks</flux:heading>
+                        <flux:button size="sm" variant="ghost" wire:click="$set('tab', 'tasks')">All tasks</flux:button>
+                    </div>
+                    @forelse ($this->upcomingTasks as $upcoming)
+                        <a href="{{ route('tasks.show', $upcoming) }}" wire:navigate wire:key="ut-{{ $upcoming->id }}" class="flex items-center justify-between gap-3 border-b border-zinc-100 px-5 py-3 last:border-b-0 hover:bg-zinc-50">
+                            <div class="min-w-0">
+                                <div class="truncate text-sm font-medium text-zinc-900">{{ $upcoming->title }}</div>
+                                <div class="text-xs text-zinc-500">{{ $upcoming->number }} · {{ $upcoming->picAssignment?->user->name ?? 'Tanpa PIC' }}</div>
+                            </div>
+                            <div class="flex shrink-0 items-center gap-3">
+                                <x-ui.master-badge :master="$upcoming->status" />
+                                @if ($upcoming->current_end)
+                                    <x-ui.deadline :date="$upcoming->current_end" class="text-end" />
+                                @endif
+                            </div>
+                        </a>
+                    @empty
+                        <x-ui.empty-state icon="check-circle" title="Belum ada Task aktif" description="Pecah pekerjaan Project menjadi Task agar tim dapat mengatur PIC, deadline, dan progress." class="py-8">
+                            @if (! $project->isArchived() && ! $project->status->is_terminal && auth()->user()->can('create', [App\Models\Task::class, $project]))
+                                <flux:button size="sm" variant="primary" icon="plus" :href="route('tasks.create', ['project' => $project->id])" wire:navigate>New Task</flux:button>
+                            @endif
+                        </x-ui.empty-state>
+                    @endforelse
+                </flux:card>
+
                 <flux:card>
                     <flux:heading size="lg">Project Summary</flux:heading>
                     <flux:text class="mt-2 whitespace-pre-line">{{ $project->description ?: 'Belum ada deskripsi.' }}</flux:text>
@@ -538,6 +667,23 @@ new class extends Component {
                     @endif
                 </flux:card>
 
+                @if ($summary['total'] > 0)
+                    <flux:card>
+                        <flux:heading size="lg">Department Progress</flux:heading>
+                        <div class="mt-4 space-y-3">
+                            @foreach ($this->departmentProgress as $row)
+                                <div wire:key="dp-{{ $row['department_id'] }}">
+                                    <div class="mb-1 flex items-center justify-between text-sm">
+                                        <span class="truncate text-zinc-800">{{ $row['name'] }}</span>
+                                        <span class="shrink-0 text-xs text-zinc-500">{{ $row['tasks'] }} tasks</span>
+                                    </div>
+                                    <x-ui.progress-bar :value="$row['progress']" />
+                                </div>
+                            @endforeach
+                        </div>
+                    </flux:card>
+                @endif
+
                 <flux:card class="p-0!">
                     <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
                         <flux:heading size="lg">Departments</flux:heading>
@@ -570,6 +716,8 @@ new class extends Component {
                 </flux:card>
             </div>
         </div>
+    @elseif ($tab === 'tasks')
+        <livewire:tasks.table mode="project" :project-id="$project->id" wire:key="tasks-{{ $project->id }}" />
     @elseif ($tab === 'milestones')
         <livewire:projects.milestones :project-id="$project->id" wire:key="milestones-{{ $project->id }}" />
     @elseif ($tab === 'team')
@@ -579,6 +727,28 @@ new class extends Component {
     @endif
 
     {{-- Modals --}}
+    @if ($can['progress'])
+        <flux:modal name="project-progress-mode" class="w-full max-w-md">
+            <div class="space-y-6">
+                <div>
+                    <flux:heading size="lg">Progress Calculation</flux:heading>
+                    <flux:text class="mt-1">Pilih cara progress project dihitung.</flux:text>
+                </div>
+                <flux:radio.group wire:model="progressMode" label="Mode">
+                    <flux:radio value="manual" label="Manual" description="Project Manager mengisi progress secara manual." />
+                    <flux:radio value="task_weighted" label="Based on Tasks" description="Menghitung progress Project secara otomatis dari bobot dan progress Task aktif. Task yang dibatalkan tidak dihitung." />
+                </flux:radio.group>
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close><flux:button variant="ghost">Cancel</flux:button></flux:modal.close>
+                    <flux:button variant="primary"
+                        x-on:click="$wire.progressMode === 'task_weighted' && '{{ $project->progress_mode->value }}' !== 'task_weighted'
+                            ? hwConfirm({ title: 'Gunakan progress otomatis?', text: 'Progress Project akan dihitung dari bobot dan progress Task. Progress manual tidak dapat diedit selama mode ini aktif.', confirmText: 'Gunakan otomatis' }).then(ok => ok && $wire.saveProgressMode())
+                            : $wire.saveProgressMode()">Save</flux:button>
+                </div>
+            </div>
+        </flux:modal>
+    @endif
+
     @if ($can['visibility'])
         <flux:modal name="project-visibility" class="w-full max-w-md">
             <form wire:submit="saveVisibility" class="space-y-6">

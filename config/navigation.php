@@ -21,9 +21,21 @@ return [
         ],
     ],
     [
+        'heading' => 'My Work',
+        'items' => [
+            ['label' => 'My Tasks', 'icon' => 'check-circle', 'route' => 'tasks.mine', 'active' => 'tasks.mine', 'permission' => ['task.view', 'task.view-all']],
+        ],
+    ],
+    [
         'heading' => 'Projects',
         'items' => [
             ['label' => 'Projects', 'icon' => 'folder', 'route' => 'projects.index', 'active' => 'projects.*', 'permission' => ['project.view', 'project.view-all']],
+        ],
+    ],
+    [
+        'heading' => 'Work',
+        'items' => [
+            ['label' => 'Tasks', 'icon' => 'queue-list', 'route' => 'tasks.index', 'active' => 'tasks.index|tasks.show|tasks.create|tasks.edit', 'permission' => ['task.view', 'task.view-all']],
         ],
     ],
     [

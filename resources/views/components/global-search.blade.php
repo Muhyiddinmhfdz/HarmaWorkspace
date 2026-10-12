@@ -31,11 +31,11 @@ new class extends Component {
 
     <flux:modal name="global-search" class="w-full max-w-xl" x-on:close="$wire.set('term', '')">
         <div class="space-y-4">
-            <flux:input wire:model.live.debounce.300ms="term" icon="magnifying-glass" placeholder="Cari project, member, department, atau client..." autofocus aria-label="Search" />
+            <flux:input wire:model.live.debounce.300ms="term" icon="magnifying-glass" placeholder="Cari project, task, member, department, atau client..." autofocus aria-label="Search" />
 
             <div class="max-h-96 overflow-y-auto">
                 @if (mb_strlen(trim($term)) < 2)
-                    <flux:text class="px-1 py-6 text-center">Ketik minimal 2 karakter, misalnya nomor project (PRJ-…) atau nama.</flux:text>
+                    <flux:text class="px-1 py-6 text-center">Ketik minimal 2 karakter, misalnya nomor project (PRJ-…), nomor task (TSK-…) atau nama.</flux:text>
                 @elseif ($this->results === [])
                     <flux:text class="px-1 py-6 text-center">Tidak ada hasil untuk "{{ $term }}".</flux:text>
                 @else

@@ -155,7 +155,7 @@ class ProjectCreationTest extends TestCase
 
     public function test_project_cannot_use_task_or_ticket_scoped_priority(): void
     {
-        $taskPriority = Priority::query()->create(['scope' => MasterScope::Task, 'code' => 'HIGH', 'name' => 'High', 'level' => 30]);
+        $taskPriority = Priority::query()->forScope(MasterScope::Task)->where('code', 'HIGH')->firstOrFail();
 
         $this->expectException(BusinessRuleException::class);
 
