@@ -5,7 +5,8 @@ namespace App\Domain\Ticket\Actions;
 use App\Domain\Shared\Exceptions\BusinessRuleException;
 use App\Domain\Ticket\Support\TicketAudit;
 use App\Domain\Ticket\Support\TicketGuard;
-use App\Domain\Ticket\Support\TicketLifecycle;
+use App\Domain\Workflow\Support\TransitionContext;
+use App\Domain\Workflow\Support\WorkflowGate;
 use App\Enums\CommentKind;
 use App\Models\Status;
 use App\Models\Ticket;
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * The only write path for ticket status (ADR-057). Each public method is one
- * lifecycle step validated by TicketLifecycle on the locked row, so double
+ * lifecycle step validated against the ticket's workflow version on the
+ * locked row (WorkflowGate, ADR-066), so double
  * clicks and stale screens cannot apply a step twice or skip one.
  *
  * Messages that belong to a step (information request/answer, revision
@@ -30,7 +32,7 @@ class ChangeTicketStatus
 {
     public function __construct(
         private TicketGuard $guard,
-        private TicketLifecycle $lifecycle,
+        private WorkflowGate $workflow,
         private TicketAudit $audit,
         private AddTicketComment $comments,
     ) {}
@@ -38,7 +40,7 @@ class ChangeTicketStatus
     /**
      * Assigned/Revision/Reopened → In Progress. started_at is set once.
      */
-    public function start(Ticket $ticket, User $actor): Ticket
+    public function start(Ticket $ticket, User $actor, ?TransitionContext $context = null): Ticket
     {
         return $this->transition($ticket, 'start', $actor, function (Ticket $ticket, Status $from, Status $to): array {
             if (! $ticket->picAssignment()->exists()) {
@@ -49,14 +51,14 @@ class ChangeTicketStatus
                 ($from->counts_as_started ? 'Melanjutkan pengerjaan ticket ' : 'Mulai mengerjakan ticket ').$ticket->number, $from, $to);
 
             return $ticket->started_at === null ? ['started_at' => Date::now()] : [];
-        });
+        }, $context, null);
     }
 
     /**
      * Pause the ticket until the requester answers; the current status is
      * remembered and restored by provideInformation().
      */
-    public function requestInformation(Ticket $ticket, string $message, User $actor): Ticket
+    public function requestInformation(Ticket $ticket, string $message, User $actor, ?TransitionContext $context = null): Ticket
     {
         $this->requireText($message, 'Pertanyaan atau informasi yang dibutuhkan wajib diisi.');
 
@@ -65,18 +67,18 @@ class ChangeTicketStatus
             $this->record($ticket, 'ticket.information_requested', 'Meminta informasi tambahan untuk ticket '.$ticket->number, $from, $to, ['comment_id' => $comment->id]);
 
             return ['resume_status_id' => $from->id];
-        });
+        }, $context, $message);
     }
 
     /**
      * Answer an information request: back to the status before the request.
      */
-    public function provideInformation(Ticket $ticket, string $message, User $actor): Ticket
+    public function provideInformation(Ticket $ticket, string $message, User $actor, ?TransitionContext $context = null): Ticket
     {
         $this->requireText($message, 'Informasi yang diminta wajib diisi.');
         $this->guard->ensureNotFinal($ticket);
 
-        return DB::transaction(function () use ($ticket, $message, $actor): Ticket {
+        return DB::transaction(function () use ($ticket, $message, $actor, $context): Ticket {
             $ticket = $this->lock($ticket);
             $from = $ticket->status;
             $resume = $ticket->resumeStatus;
@@ -85,26 +87,29 @@ class ChangeTicketStatus
                 throw new BusinessRuleException('Ticket ini tidak sedang menunggu informasi. Muat ulang data terbaru.');
             }
 
+            $transition = $this->workflow->resolve($ticket, $from, $resume, $context, 'provide_information');
+
             $comment = $this->comments->handle($ticket, $message, $actor, CommentKind::InformationProvided, audit: false);
             $ticket->forceFill(['status_id' => $resume->id, 'resume_status_id' => null, 'updated_by' => $actor->id])->save();
 
             $this->record($ticket, 'ticket.information_provided', 'Memberikan informasi untuk ticket '.$ticket->number.' (kembali ke '.$resume->name.')', $from, $resume, ['comment_id' => $comment->id]);
+            $this->workflow->record($ticket, $transition, $from, $resume, $actor, $message, array_filter(['approval_request_id' => $context?->approvalRequestId]));
 
             return $ticket;
         });
     }
 
-    public function sendToReview(Ticket $ticket, User $actor, ?string $note = null): Ticket
+    public function sendToReview(Ticket $ticket, User $actor, ?string $note = null, ?TransitionContext $context = null): Ticket
     {
         return $this->transition($ticket, 'send_to_review', $actor, function (Ticket $ticket, Status $from, Status $to) use ($note, $actor): array {
             $comment = filled($note) ? $this->comments->handle($ticket, (string) $note, $actor, audit: false) : null;
             $this->record($ticket, 'ticket.sent_to_review', 'Mengirim ticket '.$ticket->number.' untuk direview', $from, $to, ['comment_id' => $comment?->id]);
 
             return [];
-        });
+        }, $context, $note);
     }
 
-    public function requestRevision(Ticket $ticket, string $reason, User $actor): Ticket
+    public function requestRevision(Ticket $ticket, string $reason, User $actor, ?TransitionContext $context = null): Ticket
     {
         $this->requireText($reason, 'Alasan revisi wajib diisi.');
 
@@ -113,14 +118,14 @@ class ChangeTicketStatus
             $this->record($ticket, 'ticket.revision_requested', 'Meminta revisi ticket '.$ticket->number, $from, $to, ['comment_id' => $comment->id, 'reason' => $reason]);
 
             return [];
-        });
+        }, $context, $reason);
     }
 
     /**
      * In Review → Resolved with a resolution. Resolutions such as Duplicate
      * require the primary ticket, linked with the duplicate relation type.
      */
-    public function resolve(Ticket $ticket, ?int $resolutionId, ?string $notes, User $actor, ?int $primaryTicketId = null): Ticket
+    public function resolve(Ticket $ticket, ?int $resolutionId, ?string $notes, User $actor, ?int $primaryTicketId = null, ?TransitionContext $context = null): Ticket
     {
         /** @var TicketResolution $resolution */
         $resolution = $this->guard->master(TicketResolution::class, $resolutionId, 'Resolution', required: true);
@@ -150,23 +155,23 @@ class ChangeTicketStatus
                 'resolved_by' => $actor->id,
                 'resolved_at' => Date::now(),
             ];
-        });
+        }, $context, $notes);
     }
 
-    public function close(Ticket $ticket, User $actor): Ticket
+    public function close(Ticket $ticket, User $actor, ?TransitionContext $context = null): Ticket
     {
         return $this->transition($ticket, 'close', $actor, function (Ticket $ticket, Status $from, Status $to) use ($actor): array {
             $this->record($ticket, 'ticket.closed', 'Menutup ticket '.$ticket->number, $from, $to);
 
             return ['closed_by' => $actor->id, 'closed_at' => Date::now()];
-        });
+        }, $context, null);
     }
 
     /**
      * Resolved/Closed → Reopened. The previous resolution and closure stay in
      * the activity log (old values); the ticket itself is active again.
      */
-    public function reopen(Ticket $ticket, string $reason, User $actor): Ticket
+    public function reopen(Ticket $ticket, string $reason, User $actor, ?TransitionContext $context = null): Ticket
     {
         $this->requireText($reason, 'Alasan membuka kembali ticket wajib diisi.');
 
@@ -195,13 +200,13 @@ class ChangeTicketStatus
                 'reopen_count' => $ticket->reopen_count + 1,
                 'last_reopened_at' => Date::now(),
             ];
-        });
+        }, $context, $reason);
     }
 
     /**
      * Reject an invalid intake (only before work starts).
      */
-    public function reject(Ticket $ticket, ?int $reasonId, ?string $notes, User $actor): Ticket
+    public function reject(Ticket $ticket, ?int $reasonId, ?string $notes, User $actor, ?TransitionContext $context = null): Ticket
     {
         /** @var TicketRejectionReason $reason */
         $reason = $this->guard->master(TicketRejectionReason::class, $reasonId, 'Alasan penolakan', required: true);
@@ -211,10 +216,10 @@ class ChangeTicketStatus
             $this->record($ticket, 'ticket.rejected', 'Menolak ticket '.$ticket->number.' ('.$reason->name.')', $from, $to, ['reason' => $notes]);
 
             return ['rejection_reason_id' => $reason->id, 'rejection_notes' => $notes];
-        });
+        }, $context, $notes);
     }
 
-    public function cancel(Ticket $ticket, string $reason, User $actor): Ticket
+    public function cancel(Ticket $ticket, string $reason, User $actor, ?TransitionContext $context = null): Ticket
     {
         $this->requireText($reason, 'Alasan pembatalan wajib diisi.');
 
@@ -222,7 +227,7 @@ class ChangeTicketStatus
             $this->record($ticket, 'ticket.cancelled', 'Membatalkan ticket '.$ticket->number, $from, $to, ['reason' => $reason]);
 
             return [];
-        });
+        }, $context, $reason);
     }
 
     /**
@@ -230,17 +235,13 @@ class ChangeTicketStatus
      *
      * @param  Closure(Ticket, Status, Status): array<string, mixed>  $effects
      */
-    private function transition(Ticket $ticket, string $operation, User $actor, Closure $effects): Ticket
+    private function transition(Ticket $ticket, string $operation, User $actor, Closure $effects, ?TransitionContext $context = null, ?string $comment = null): Ticket
     {
-        $to = $this->lifecycle->target($operation);
-
-        return DB::transaction(function () use ($ticket, $operation, $actor, $effects, $to): Ticket {
+        return DB::transaction(function () use ($ticket, $operation, $actor, $effects, $context, $comment): Ticket {
             $ticket = $this->lock($ticket);
             $from = $ticket->status;
-
-            if (! $this->lifecycle->canPerform($ticket, $operation)) {
-                throw new BusinessRuleException($this->lifecycle->rejectionMessage($from, $to));
-            }
+            $transition = $this->workflow->resolve($ticket, $from, null, $context, $operation);
+            $to = $transition->toState->status;
 
             $attributes = $effects($ticket, $from, $to);
 
@@ -250,8 +251,25 @@ class ChangeTicketStatus
                 $ticket->forceFill(['resume_status_id' => null])->save();
             }
 
+            $this->workflow->record($ticket, $transition, $from, $to, $actor, $comment, array_filter(['approval_request_id' => $context?->approvalRequestId]));
+
             return $ticket->setRelation('status', $to);
         });
+    }
+
+    /**
+     * Generic workflow step without ticket-specific side effects (statuses
+     * added by administrators, e.g. "QA Review"). Always targets the chosen
+     * transition.
+     */
+    public function move(Ticket $ticket, User $actor, TransitionContext $context, ?string $comment = null): Ticket
+    {
+        return $this->transition($ticket, 'move', $actor, function (Ticket $ticket, Status $from, Status $to) use ($comment, $actor): array {
+            $commentModel = filled($comment) ? $this->comments->handle($ticket, (string) $comment, $actor, audit: false) : null;
+            $this->record($ticket, 'ticket.status_changed', 'Mengubah status ticket '.$ticket->number.' menjadi '.$to->name, $from, $to, ['comment_id' => $commentModel?->id]);
+
+            return [];
+        }, $context, $comment);
     }
 
     private function lock(Ticket $ticket): Ticket

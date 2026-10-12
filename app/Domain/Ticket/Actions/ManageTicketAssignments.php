@@ -5,7 +5,7 @@ namespace App\Domain\Ticket\Actions;
 use App\Domain\Shared\Exceptions\BusinessRuleException;
 use App\Domain\Ticket\Support\TicketAudit;
 use App\Domain\Ticket\Support\TicketGuard;
-use App\Domain\Ticket\Support\TicketLifecycle;
+use App\Domain\Workflow\Support\WorkflowGate;
 use App\Enums\TicketAssignmentRole;
 use App\Models\Ticket;
 use App\Models\TicketAssignment;
@@ -22,7 +22,7 @@ class ManageTicketAssignments
 {
     public function __construct(
         private TicketGuard $guard,
-        private TicketLifecycle $lifecycle,
+        private WorkflowGate $workflow,
         private TicketAudit $audit,
     ) {}
 
@@ -136,18 +136,25 @@ class ManageTicketAssignments
                 $attributes['first_assigned_at'] = $now;
             }
 
-            if ($this->lifecycle->canPerform($ticket, 'assign')) {
-                $attributes['status_id'] = $this->lifecycle->target('assign')->id;
+            $assignTransition = $this->workflow->find($ticket, $from, 'assign');
+            $to = $assignTransition?->toState->status;
+
+            if ($to !== null) {
+                $attributes['status_id'] = $to->id;
             }
 
             $ticket->forceFill($attributes)->save();
+
+            if ($assignTransition !== null && $to !== null) {
+                $this->workflow->record($ticket, $assignTransition, $from, $to, $actor, null, ['pic' => $user->name]);
+            }
 
             $this->audit->record(
                 $ticket,
                 $current ? 'ticket.pic_changed' : 'ticket.assigned',
                 $current ? 'Mengganti PIC ticket: '.$current->user->name.' → '.$user->name : 'Menugaskan ticket ke '.$user->name,
-                old: array_filter(['pic' => $current?->user->name, 'status' => isset($attributes['status_id']) ? $from->name : null]),
-                new: array_filter(['pic' => $user->name, 'status' => isset($attributes['status_id']) ? $this->lifecycle->target('assign')->name : null]),
+                old: array_filter(['pic' => $current?->user->name, 'status' => $to !== null ? $from->name : null]),
+                new: array_filter(['pic' => $user->name, 'status' => $to?->name]),
             );
 
             return $ticket;

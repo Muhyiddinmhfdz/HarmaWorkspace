@@ -17,6 +17,7 @@ class SystemSeeder extends Seeder
             ProjectMasterSeeder::class,
             TaskMasterSeeder::class,
             TicketMasterSeeder::class,
+            WorkflowSeeder::class,
             SuperAdminSeeder::class,
         ]);
     }

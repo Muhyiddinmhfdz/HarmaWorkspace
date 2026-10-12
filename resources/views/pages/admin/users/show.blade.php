@@ -67,6 +67,7 @@ new class extends Component {
 
         return Activity::query()
             ->inLog(AuditLogger::LOG_NAME)
+            ->where('event', '!=', 'workflow.transition_executed')
             ->where(fn ($query) => $query
                 ->where(fn ($query) => $query->where('subject_type', 'user')->where('subject_id', $this->userId))
                 ->orWhere(fn ($query) => $query->where('causer_type', 'user')->where('causer_id', $this->userId)))

@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\Date;
  * @property int|null $ticket_subcategory_id
  * @property int|null $ticket_source_id
  * @property int $status_id
+ * @property int|null $workflow_version_id
  * @property int $priority_id
  * @property int $current_department_id
  * @property int|null $accepted_by
@@ -156,6 +157,16 @@ class Ticket extends Model
     public function source(): BelongsTo
     {
         return $this->belongsTo(TicketSource::class, 'ticket_source_id');
+    }
+
+    /**
+     * The workflow version this record runs on (fixed at creation).
+     *
+     * @return BelongsTo<WorkflowVersion, $this>
+     */
+    public function workflowVersion(): BelongsTo
+    {
+        return $this->belongsTo(WorkflowVersion::class);
     }
 
     /**

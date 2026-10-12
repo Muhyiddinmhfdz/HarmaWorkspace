@@ -8,7 +8,10 @@ use App\Domain\System\Numbering\NumberGenerator;
 use App\Domain\System\Settings\SettingKey;
 use App\Domain\Ticket\Support\TicketAudit;
 use App\Domain\Ticket\Support\TicketGuard;
+use App\Domain\Workflow\Support\WorkflowGate;
+use App\Domain\Workflow\Support\WorkflowRegistry;
 use App\Enums\MasterScope;
+use App\Enums\WorkflowEntity;
 use App\Models\Client;
 use App\Models\Priority;
 use App\Models\Ticket;
@@ -34,10 +37,12 @@ class CreateTicket
         private TicketGuard $guard,
         private TicketAudit $audit,
         private AddTicketAttachment $attachments,
+        private WorkflowRegistry $workflows,
+        private WorkflowGate $workflow,
     ) {}
 
     /**
-     * @param  array{title: string, description: string, ticket_type_id: int, ticket_category_id: int, priority_id: int, current_department_id: int, ticket_subcategory_id?: int|null, ticket_source_id?: int|null, client_id?: int|null, project_id?: int|null, task_id?: int|null, due_date?: string|null, requester_user_id?: int|null}  $data
+     * @param  array{title: string, description: string, workflow_id?: int|null, ticket_type_id: int, ticket_category_id: int, priority_id: int, current_department_id: int, ticket_subcategory_id?: int|null, ticket_source_id?: int|null, client_id?: int|null, project_id?: int|null, task_id?: int|null, due_date?: string|null, requester_user_id?: int|null}  $data
      * @param  list<UploadedFile>  $files
      */
     public function handle(array $data, User $actor, array $files = []): Ticket
@@ -48,7 +53,8 @@ class CreateTicket
             throw new BusinessRuleException('Requester harus user internal yang aktif.');
         }
 
-        $status = $this->masters->initialStatus(MasterScope::Ticket);
+        $version = $this->workflows->versionForNew(WorkflowEntity::Ticket, filled($data['workflow_id'] ?? null) ? (int) $data['workflow_id'] : null);
+        $status = $this->workflows->initialState($version)->status;
         $priority = $this->masters->priority((int) $data['priority_id'], MasterScope::Ticket);
         $department = $this->guard->department((int) $data['current_department_id']);
         $this->guard->master(TicketType::class, (int) $data['ticket_type_id'], 'Ticket type', required: true);
@@ -60,7 +66,7 @@ class CreateTicket
 
         $due = filled($data['due_date'] ?? null) ? Carbon::parse((string) $data['due_date'])->endOfDay() : null;
 
-        return DB::transaction(function () use ($data, $actor, $requester, $status, $priority, $department, $category, $subcategory, $client, $project, $task, $due, $files): Ticket {
+        return DB::transaction(function () use ($data, $actor, $requester, $status, $priority, $department, $category, $subcategory, $client, $project, $task, $due, $files, $version): Ticket {
             $ticket = new Ticket([
                 'title' => $data['title'],
                 'description' => $data['description'],
@@ -77,6 +83,7 @@ class CreateTicket
                 'project_id' => $project?->id,
                 'task_id' => $task?->id,
                 'status_id' => $status->id,
+                'workflow_version_id' => $version->id,
                 'priority_id' => $priority->id,
                 'current_department_id' => $department->id,
                 'planned_due_at' => $due,
@@ -96,6 +103,8 @@ class CreateTicket
                 ],
                 properties: ['priority_level' => $priority->level],
             );
+
+            $this->workflow->record($ticket, null, null, $status, $actor, null, ['event' => 'created']);
 
             foreach ($files as $file) {
                 $this->attachments->store($ticket, $file, $actor, audit: false);

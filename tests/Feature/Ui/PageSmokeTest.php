@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Ui;
 
+use App\Domain\Approval\Actions\ManageApprovalTemplates;
+use App\Models\ApprovalRequest;
 use App\Models\Attachment;
 use App\Models\Client;
 use App\Models\Department;
@@ -11,6 +13,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Models\Workflow;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
@@ -78,6 +81,15 @@ class PageSmokeTest extends TestCase
             'master ticket subcategories' => ['master-data.manage', 'ticket-subcategories'],
             'master ticket resolutions' => ['master-data.manage', 'ticket-resolutions'],
             'master ticket relation types' => ['master-data.manage', 'ticket-relation-types'],
+            'workflows' => ['admin.workflows.index'],
+            'workflow overview' => ['admin.workflows.show', 'overview'],
+            'workflow builder' => ['admin.workflows.show', 'builder'],
+            'workflow versions' => ['admin.workflows.show', 'versions'],
+            'workflow usage' => ['admin.workflows.show', 'usage'],
+            'approval templates' => ['admin.approval-templates.index'],
+            'approval template' => ['admin.approval-templates.show'],
+            'my approvals' => ['approvals.mine'],
+            'approval detail' => ['approvals.show'],
         ];
     }
 
@@ -109,6 +121,13 @@ class PageSmokeTest extends TestCase
         $attachment = new Attachment;
         $attachment->forceFill(['attachable_type' => 'ticket', 'attachable_id' => $ticket->id, 'uploaded_by' => $member->id, 'disk' => 'local', 'path' => 'attachments/x.png', 'original_name' => 'screenshot.png', 'mime_type' => 'image/png', 'size' => 2048])->save();
 
+        $template = app(ManageApprovalTemplates::class)->save(null, ['name' => 'Smoke Approval', 'entity_type' => 'ticket'], $admin);
+        app(ManageApprovalTemplates::class)->saveStep($template, null, ['name' => 'Lead', 'approver_type' => 'department_leader']);
+        $approval = new ApprovalRequest;
+        $approval->forceFill(['approvable_type' => 'ticket', 'approvable_id' => $ticket->id, 'approval_template_id' => $template->id, 'title' => 'Resolve', 'status' => 'pending', 'requested_by' => $member->id, 'requested_at' => now(), 'current_step_order' => 1])->save();
+        $approval->steps()->forceCreate(['step_order' => 1, 'name' => 'Lead', 'approver_type' => 'department_leader', 'status' => 'pending', 'started_at' => now()]);
+        $workflow = Workflow::query()->where('entity_type', 'ticket')->where('is_default', true)->sole();
+
         $parameters = match ($routeName) {
             'admin.users.show', 'admin.users.edit' => ['user' => $member],
             'admin.departments.show' => ['department' => $department],
@@ -119,6 +138,9 @@ class PageSmokeTest extends TestCase
             'master-data.manage' => ['type' => $variant],
             'tasks.show', 'tasks.edit' => ['task' => $task],
             'tickets.show', 'tickets.edit' => ['ticket' => $ticket],
+            'admin.workflows.show' => ['workflow' => $workflow, 'tab' => $variant],
+            'admin.approval-templates.show' => ['approvalTemplate' => $template],
+            'approvals.show' => ['approvalRequest' => $approval],
             default => [],
         };
 

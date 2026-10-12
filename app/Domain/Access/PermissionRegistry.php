@@ -89,6 +89,26 @@ class PermissionRegistry
     ];
 
     /**
+     * Permissions introduced in Phase 5 (granted once by a data migration).
+     * Editing and publishing workflows and approval templates is a system
+     * configuration task: by default only the Super Admin holds it (ADR-075).
+     *
+     * @var array<string, list<string>>
+     */
+    public const array PHASE_5_DEFAULTS = [
+        'Management' => [
+            'workflow.view',
+            'approval.view',
+            'approval.view-all',
+            'approval.decide',
+        ],
+        'Staff' => [
+            'approval.view',
+            'approval.decide',
+        ],
+    ];
+
+    /**
      * Permissions grouped by module, with an Indonesian description.
      *
      * @return array<string, array{label: string, permissions: array<string, string>}>
@@ -196,6 +216,23 @@ class PermissionRegistry
                     'ticket.cancel' => 'Membatalkan ticket',
                 ],
             ],
+            'workflow' => [
+                'label' => 'Workflows',
+                'permissions' => [
+                    'workflow.view' => 'Melihat definisi workflow dan versinya',
+                    'workflow.manage' => 'Membuat dan mengubah draft workflow',
+                    'workflow.publish' => 'Mempublikasikan versi workflow',
+                ],
+            ],
+            'approval' => [
+                'label' => 'Approvals',
+                'permissions' => [
+                    'approval.view' => 'Membuka My Approvals dan approval yang relevan',
+                    'approval.view-all' => 'Melihat seluruh approval request dan membatalkannya bila perlu',
+                    'approval.decide' => 'Memberi keputusan (approve, reject, revisi) saat menjadi approver',
+                    'approval.manage-templates' => 'Mengelola template approval',
+                ],
+            ],
             'role' => [
                 'label' => 'Roles',
                 'permissions' => [
@@ -280,6 +317,7 @@ class PermissionRegistry
                 ...self::PHASE_2_DEFAULTS['Management'],
                 ...self::PHASE_3_DEFAULTS['Management'],
                 ...self::PHASE_4_DEFAULTS['Management'],
+                ...self::PHASE_5_DEFAULTS['Management'],
             ],
             'Staff' => [
                 'dashboard.view',
@@ -288,6 +326,7 @@ class PermissionRegistry
                 ...self::PHASE_2_DEFAULTS['Staff'],
                 ...self::PHASE_3_DEFAULTS['Staff'],
                 ...self::PHASE_4_DEFAULTS['Staff'],
+                ...self::PHASE_5_DEFAULTS['Staff'],
             ],
         ];
     }

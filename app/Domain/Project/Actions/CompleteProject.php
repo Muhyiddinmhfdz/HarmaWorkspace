@@ -4,8 +4,9 @@ namespace App\Domain\Project\Actions;
 
 use App\Domain\Audit\AuditLogger;
 use App\Domain\Project\Support\ProjectGuard;
-use App\Domain\Project\Support\ProjectLifecycle;
 use App\Domain\Shared\Exceptions\BusinessRuleException;
+use App\Domain\Workflow\Support\TransitionContext;
+use App\Domain\Workflow\Support\WorkflowGate;
 use App\Enums\MasterScope;
 use App\Enums\ProgressMode;
 use App\Models\Project;
@@ -29,29 +30,28 @@ class CompleteProject
     public function __construct(
         private AuditLogger $audit,
         private ProjectGuard $guard,
-        private ProjectLifecycle $lifecycle,
+        private WorkflowGate $workflow,
     ) {}
 
-    public function handle(Project $project, User $actor, ?string $actualEnd = null): Project
+    public function handle(Project $project, User $actor, ?string $actualEnd = null, ?TransitionContext $context = null): Project
     {
         $this->guard->ensureEditable($project);
 
-        $status = Status::query()->forScope(MasterScope::Project)->active()->where('counts_as_completed', true)->orderBy('sort_order')->first()
-            ?? throw new BusinessRuleException('Belum ada status yang menandai project selesai. Atur di Master Data.');
+        $status = $context?->transition !== null
+            ? $context->transition->toState()->with('status')->firstOrFail()->status
+            : Status::query()->forScope(MasterScope::Project)->active()->where('counts_as_completed', true)->orderBy('sort_order')->first()
+                ?? throw new BusinessRuleException('Belum ada status yang menandai project selesai. Atur di Master Data.');
 
         $end = $actualEnd !== null ? Carbon::parse($actualEnd)->startOfDay() : Date::today();
 
-        return DB::transaction(function () use ($project, $actor, $status, $end): Project {
+        return DB::transaction(function () use ($project, $actor, $status, $end, $context): Project {
             $project = Project::query()->lockForUpdate()->with('status')->findOrFail($project->id);
 
             if ($project->status->counts_as_completed) {
                 throw new BusinessRuleException('Project sudah berstatus selesai.');
             }
 
-            if (! $this->lifecycle->allows($project->status, $status)) {
-                throw new BusinessRuleException($this->lifecycle->rejectionMessage($project->status, $status));
-            }
-
+            $transition = $this->workflow->resolve($project, $project->status, $status, $context, 'complete');
             $this->ensureNoActiveWork($project);
 
             $actualStart = $project->actual_start ?? $project->current_start;
@@ -61,7 +61,8 @@ class CompleteProject
             }
 
             $health = ProjectHealthStatus::query()->active()->where('represents_completion', true)->first();
-            $previousStatus = $project->status->name;
+            $previous = $project->status;
+            $previousStatus = $previous->name;
 
             $project->forceFill([
                 'status_id' => $status->id,
@@ -80,6 +81,7 @@ class CompleteProject
                 old: ['status' => $previousStatus],
                 new: ['status' => $status->name, 'actual_end' => $end->toDateString()],
             );
+            $this->workflow->record($project, $transition, $previous, $status, $actor, null, array_filter(['approval_request_id' => $context?->approvalRequestId]));
 
             return $project;
         });
@@ -89,7 +91,7 @@ class CompleteProject
      * Blocks completion while tasks or tickets are still active, with a
      * per-status summary so the project manager knows what to follow up.
      */
-    private function ensureNoActiveWork(Project $project): void
+    public function ensureNoActiveWork(Project $project): void
     {
         $summary = fn ($query, string $table) => $query
             ->where($table.'.project_id', $project->id)

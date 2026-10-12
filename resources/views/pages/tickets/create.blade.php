@@ -58,6 +58,8 @@ new #[Title('New Ticket')] class extends Component {
 
     public string $due_date = '';
 
+    public string $workflow_id = '';
+
     /** @var array<int, \Livewire\Features\SupportFileUploads\TemporaryUploadedFile> */
     public array $files = [];
 
@@ -112,6 +114,18 @@ new #[Title('New Ticket')] class extends Component {
             'sources' => TicketSource::query()->active()->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
             'clients' => Client::query()->active()->orderBy('name')->get(['id', 'name']),
         ];
+    }
+
+    /**
+     * Usable ticket processes; the selector only appears when there is a
+     * real choice (the default suits most tickets).
+     *
+     * @return Collection<int, \App\Models\Workflow>
+     */
+    #[Computed]
+    public function processes(): Collection
+    {
+        return \App\Models\Workflow::query()->forEntity(\App\Enums\WorkflowEntity::Ticket)->usable()->orderByDesc('is_default')->orderBy('name')->get(['id', 'name', 'is_default']);
     }
 
     /**
@@ -204,6 +218,7 @@ new #[Title('New Ticket')] class extends Component {
             'ticket_subcategory_id' => ['nullable', 'integer'],
             'ticket_source_id' => ['nullable', 'integer'],
             'due_date' => ['nullable', 'date', 'after_or_equal:today'],
+            'workflow_id' => ['nullable', 'integer'],
             'files' => ['array', 'max:'.AttachmentRules::maxPerUpload()],
             'files.*' => AttachmentRules::file(),
         ], [
@@ -227,6 +242,7 @@ new #[Title('New Ticket')] class extends Component {
             'project_id' => filled($validated['project_id']) ? (int) $validated['project_id'] : null,
             'task_id' => filled($validated['task_id']) ? (int) $validated['task_id'] : null,
             'due_date' => $validated['due_date'] ?: null,
+            'workflow_id' => filled($validated['workflow_id']) ? (int) $validated['workflow_id'] : null,
         ], auth()->user(), array_values($this->files));
 
         $this->notifyAfterRedirect('success', 'Ticket '.$ticket->number.' berhasil dibuat.');
@@ -340,6 +356,14 @@ new #[Title('New Ticket')] class extends Component {
                         @endforeach
                     </flux:select>
                 </div>
+                @if ($this->processes->count() > 1)
+                    <flux:select wire:model="workflow_id" label="Process" description="Biarkan default kecuali ticket ini membutuhkan proses khusus.">
+                        <flux:select.option value="">{{ $this->processes->firstWhere('is_default', true)?->name ?? 'Default' }} (default)</flux:select.option>
+                        @foreach ($this->processes->where('is_default', false) as $process)
+                            <flux:select.option :value="$process->id" wire:key="wf-{{ $process->id }}">{{ $process->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                @endif
                 <div class="grid gap-4 sm:grid-cols-2">
                     <flux:select wire:model="client_id" label="Client" description="Opsional, misalnya client yang melaporkan.">
                         <flux:select.option value="">Tanpa client</flux:select.option>

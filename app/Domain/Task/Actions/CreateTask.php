@@ -10,8 +10,11 @@ use App\Domain\System\Numbering\NumberGenerator;
 use App\Domain\System\Settings\SettingKey;
 use App\Domain\Task\Support\TaskAudit;
 use App\Domain\Task\Support\TaskGuard;
+use App\Domain\Workflow\Support\WorkflowGate;
+use App\Domain\Workflow\Support\WorkflowRegistry;
 use App\Enums\MasterScope;
 use App\Enums\TaskAssignmentRole;
+use App\Enums\WorkflowEntity;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskAssignment;
@@ -25,7 +28,9 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Create a project task or a standalone task with its number, schedule
- * baseline (planned = current), PIC and collaborators.
+ * baseline (planned = current), PIC and collaborators. The task is bound to
+ * the current published default workflow version and starts in its initial
+ * state (or another non-started state of that workflow).
  */
 class CreateTask
 {
@@ -36,10 +41,12 @@ class CreateTask
         private TaskGuard $guard,
         private TaskAudit $audit,
         private RecalculateProjectProgress $recalculate,
+        private WorkflowRegistry $workflows,
+        private WorkflowGate $workflow,
     ) {}
 
     /**
-     * @param  array{title: string, description?: string|null, project_id?: int|null, milestone_id?: int|null, department_id?: int|null, pic_user_id?: int|null, collaborator_ids?: list<int>, status_id?: int|null, priority_id: int, task_type_id?: int|null, task_category_id?: int|null, start_date?: string|null, due_date?: string|null, estimated_hours?: float|string|null, weight?: float|string|null}  $data
+     * @param  array{title: string, workflow_id?: int|null, description?: string|null, project_id?: int|null, milestone_id?: int|null, department_id?: int|null, pic_user_id?: int|null, collaborator_ids?: list<int>, status_id?: int|null, priority_id: int, task_type_id?: int|null, task_category_id?: int|null, start_date?: string|null, due_date?: string|null, estimated_hours?: float|string|null, weight?: float|string|null}  $data
      */
     public function handle(array $data, User $actor): Task
     {
@@ -50,9 +57,14 @@ class CreateTask
             $this->guard->ensureProjectAcceptsWork($project);
         }
 
+        $version = $this->workflows->versionForNew(WorkflowEntity::Task, filled($data['workflow_id'] ?? null) ? (int) $data['workflow_id'] : null);
         $status = filled($data['status_id'] ?? null)
             ? $this->masters->status((int) $data['status_id'], MasterScope::Task)
-            : $this->masters->initialStatus(MasterScope::Task);
+            : $this->workflows->initialState($version)->status;
+
+        if ($this->workflows->stateFor($version, $status->id) === null) {
+            throw new BusinessRuleException('Status '.$status->name.' tidak tersedia pada proses task ini.');
+        }
 
         if ($status->is_terminal || $status->is_blocked) {
             throw new BusinessRuleException('Task baru tidak dapat langsung berstatus '.$status->name.'.');
@@ -79,7 +91,7 @@ class CreateTask
 
         [$start, $end] = $this->schedule($data['start_date'] ?? null, $data['due_date'] ?? null);
 
-        return DB::transaction(function () use ($data, $actor, $project, $status, $priority, $department, $milestone, $pic, $collaborators, $start, $end): Task {
+        return DB::transaction(function () use ($data, $actor, $project, $status, $priority, $department, $milestone, $pic, $collaborators, $start, $end, $version): Task {
             $task = new Task([
                 'title' => $data['title'],
                 'description' => $data['description'] ?? null,
@@ -93,6 +105,7 @@ class CreateTask
                 'project_id' => $project?->id,
                 'milestone_id' => $milestone?->id,
                 'status_id' => $status->id,
+                'workflow_version_id' => $version->id,
                 'department_id' => $department?->id,
                 'planned_start' => $start,
                 'planned_end' => $end,
@@ -125,6 +138,7 @@ class CreateTask
                 'due_date' => $end?->toDateString(),
             ]);
 
+            $this->workflow->record($task, null, null, $status, $actor, null, ['event' => 'created']);
             $this->recalculate->handle($project?->id);
 
             return $task;

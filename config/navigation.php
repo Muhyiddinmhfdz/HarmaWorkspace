@@ -25,6 +25,7 @@ return [
         'items' => [
             ['label' => 'My Tasks', 'icon' => 'check-circle', 'route' => 'tasks.mine', 'active' => 'tasks.mine', 'permission' => ['task.view', 'task.view-all']],
             ['label' => 'My Tickets', 'icon' => 'ticket', 'route' => 'tickets.mine', 'active' => 'tickets.mine', 'permission' => ['ticket.view', 'ticket.view-all']],
+            ['label' => 'My Approvals', 'icon' => 'check-badge', 'route' => 'approvals.mine', 'active' => 'approvals.*', 'permission' => ['approval.view', 'approval.view-all']],
         ],
     ],
     [
@@ -58,6 +59,8 @@ return [
     [
         'heading' => 'Administration',
         'items' => [
+            ['label' => 'Workflows', 'icon' => 'arrow-path-rounded-square', 'route' => 'admin.workflows.index', 'active' => 'admin.workflows.*', 'permission' => ['workflow.view', 'workflow.manage']],
+            ['label' => 'Approval Templates', 'icon' => 'clipboard-document-check', 'route' => 'admin.approval-templates.index', 'active' => 'admin.approval-templates.*', 'permission' => 'approval.manage-templates'],
             ['label' => 'Role & Permission', 'icon' => 'shield-check', 'route' => 'admin.roles.index', 'active' => 'admin.roles.*|admin.permissions.*', 'permission' => 'role.view'],
             ['label' => 'System Settings', 'icon' => 'cog-6-tooth', 'route' => 'settings.index', 'active' => 'settings.*', 'permission' => 'settings.view'],
             ['label' => 'Audit Log', 'icon' => 'clipboard-document-list', 'route' => 'admin.audit.index', 'active' => 'admin.audit.*', 'permission' => 'audit.view'],

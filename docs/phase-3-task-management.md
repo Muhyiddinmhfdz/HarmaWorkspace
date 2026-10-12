@@ -68,6 +68,8 @@ Logika tidak pernah memakai nama: *started* â†’ `counts_as_started`, *blocked* â
 
 ## 7. Lifecycle (ADR-041)
 
+> Sejak Phase 5 peta transisi ini menjadi **Default Task Workflow** v1 dan kelas lifecycle dihapus; lihat [phase-5-workflow-approval.md](phase-5-workflow-approval.md).
+
 `TaskLifecycle` memvalidasi transisi berdasar **code** status (sampai Workflow Engine Phase 5):
 
 | Dari | Ke |

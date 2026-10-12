@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\TicketAttachmentController;
+use App\Models\ApprovalRequest;
+use App\Models\ApprovalTemplate;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\Position;
@@ -8,6 +10,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\User;
+use App\Models\Workflow;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
 
@@ -74,6 +77,20 @@ Route::middleware('auth')->group(function () {
         Route::livewire('permissions', 'pages::admin.permissions.index')
             ->middleware('can:permission.view')
             ->name('permissions.index');
+
+        Route::livewire('workflows', 'pages::admin.workflows.index')
+            ->middleware('can:viewAny,'.Workflow::class)
+            ->name('workflows.index');
+        Route::livewire('workflows/{workflow}', 'pages::admin.workflows.show')
+            ->middleware('can:view,workflow')
+            ->name('workflows.show');
+
+        Route::livewire('approval-templates', 'pages::admin.approval-templates.index')
+            ->middleware('can:viewAny,'.ApprovalTemplate::class)
+            ->name('approval-templates.index');
+        Route::livewire('approval-templates/{approvalTemplate}', 'pages::admin.approval-templates.show')
+            ->middleware('can:view,approvalTemplate')
+            ->name('approval-templates.show');
 
         Route::livewire('audit', 'pages::admin.audit.index')
             ->middleware('can:audit.view')
@@ -147,6 +164,14 @@ Route::middleware('auth')->group(function () {
     Route::get('tickets/{ticket}/attachments/{attachment}', TicketAttachmentController::class)
         ->middleware('can:view,ticket')
         ->name('tickets.attachments.download');
+
+    // Approvals
+    Route::livewire('my-approvals', 'pages::approvals.mine')
+        ->middleware('can:viewAny,'.ApprovalRequest::class)
+        ->name('approvals.mine');
+    Route::livewire('approvals/{approvalRequest}', 'pages::approvals.show')
+        ->middleware('can:view,approvalRequest')
+        ->name('approvals.show');
 
     Route::livewire('settings', 'pages::settings.index')
         ->middleware('can:settings.view')

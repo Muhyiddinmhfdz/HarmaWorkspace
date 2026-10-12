@@ -84,6 +84,15 @@ new #[Title('Dashboard')] class extends Component {
             ->get();
     }
 
+    /**
+     * Approvals waiting for the user's decision (0 = card hidden).
+     */
+    #[Computed]
+    public function pendingApprovals(): int
+    {
+        return Auth::user()->can('approval.decide') ? app(\App\Domain\Approval\Support\ApprovalInbox::class)->countFor(Auth::user()) : 0;
+    }
+
     #[Computed]
     public function canSeeTickets(): bool
     {
@@ -329,6 +338,7 @@ new #[Title('Dashboard')] class extends Component {
 
         return Activity::query()
             ->inLog(AuditLogger::LOG_NAME)
+            ->where('event', '!=', 'workflow.transition_executed')
             ->with('causer:id,name,username')
             ->latest('id')
             ->limit(6)
@@ -338,6 +348,19 @@ new #[Title('Dashboard')] class extends Component {
 
 <div class="mx-auto w-full max-w-6xl">
     <x-ui.page-header :title="$this->greeting().', '.auth()->user()->name" description="Berikut ringkasan workspace Anda hari ini." />
+
+    @if ($this->pendingApprovals > 0)
+        <a href="{{ route('approvals.mine') }}" wire:navigate class="mb-4 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4 transition hover:border-amber-300">
+            <div class="flex items-center gap-3">
+                <flux:icon.check-badge class="size-6 text-amber-600" />
+                <div>
+                    <div class="text-sm font-medium text-zinc-900">Pending My Approval</div>
+                    <div class="text-xs text-zinc-600">Permintaan yang menunggu keputusan Anda.</div>
+                </div>
+            </div>
+            <span class="text-2xl font-semibold tabular-nums text-zinc-900">{{ $this->pendingApprovals }}</span>
+        </a>
+    @endif
 
     @if ($this->taskCards !== [])
         <div class="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

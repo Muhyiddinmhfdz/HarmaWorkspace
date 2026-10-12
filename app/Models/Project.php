@@ -31,6 +31,7 @@ use Illuminate\Support\Carbon;
  * @property int|null $client_id
  * @property int $project_category_id
  * @property int $status_id
+ * @property int|null $workflow_version_id
  * @property int $priority_id
  * @property int $health_status_id
  * @property int|null $owner_id
@@ -91,6 +92,16 @@ class Project extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ProjectCategory::class, 'project_category_id');
+    }
+
+    /**
+     * The workflow version this record runs on (fixed at creation).
+     *
+     * @return BelongsTo<WorkflowVersion, $this>
+     */
+    public function workflowVersion(): BelongsTo
+    {
+        return $this->belongsTo(WorkflowVersion::class);
     }
 
     /**

@@ -67,6 +67,10 @@ class Status extends Model
 
     public function isInUse(): bool
     {
+        if (WorkflowState::query()->where('status_id', $this->id)->exists()) {
+            return true;
+        }
+
         return match ($this->scope) {
             MasterScope::Project => Project::query()->where('status_id', $this->id)->exists(),
             MasterScope::Task => Task::query()->where('status_id', $this->id)->exists(),

@@ -2,15 +2,19 @@
 
 namespace Tests\Feature\System;
 
+use App\Domain\Approval\Support\ApprovalInbox;
 use App\Domain\Ticket\Support\TicketQueue;
 use App\Enums\MasterScope;
 use App\Enums\ProgressMode;
+use App\Models\ApprovalTemplate;
 use App\Models\Project;
 use App\Models\Status;
 use App\Models\Task;
 use App\Models\Ticket;
 use App\Models\TicketResolution;
 use App\Models\TicketType;
+use App\Models\User;
+use App\Models\Workflow;
 use Database\Seeders\Development\DevelopmentSeeder;
 use Database\Seeders\System\SystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,14 +38,21 @@ class SeederTest extends TestCase
         $this->assertSame(ProgressMode::TaskWeighted, $pos->progress_mode);
         $this->assertGreaterThan(0, $pos->progress_percentage);
 
-        $this->assertSame(8, Ticket::query()->count());
+        $this->assertSame(9, Ticket::query()->count());
         $queue = app(TicketQueue::class);
         $counts = $queue->counts($queue->base($admin), ['new', 'unassigned', 'assigned', 'in_progress', 'waiting', 'review', 'resolved', 'overdue'], $admin);
-        $this->assertSame(['new' => 1, 'unassigned' => 1, 'assigned' => 1, 'in_progress' => 2, 'waiting' => 1, 'review' => 1, 'resolved' => 1, 'overdue' => 1], $counts);
+        $this->assertSame(['new' => 1, 'unassigned' => 1, 'assigned' => 1, 'in_progress' => 2, 'waiting' => 1, 'review' => 2, 'resolved' => 1, 'overdue' => 1], $counts);
+
+        // Demo approval: the bug-workflow ticket waits for the DEV leader.
+        $this->assertSame(2, ApprovalTemplate::query()->count());
+        $this->assertSame(5, Workflow::query()->count(), '3 defaults + 2 demo workflows');
+        $andi = User::query()->where('username', 'andi')->sole();
+        $this->assertSame(1, app(ApprovalInbox::class)->countFor($andi));
 
         $this->seed(DevelopmentSeeder::class);
         $this->assertSame(3, Project::query()->count(), 'Seeder is idempotent');
-        $this->assertSame(8, Ticket::query()->count());
+        $this->assertSame(9, Ticket::query()->count());
+        $this->assertSame(5, Workflow::query()->count());
     }
 
     public function test_system_seeder_ticket_masters_are_idempotent_and_respect_admin_changes(): void

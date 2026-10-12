@@ -40,4 +40,5 @@ vendor/bin/phpstan analyse
 - [docs/phase-2-project-management.md](docs/phase-2-project-management.md) — project multi-divisi, numbering, jadwal, milestone, visibility, ADR-022–038
 - [docs/phase-3-task-management.md](docs/phase-3-task-management.md) — task, assignment, lifecycle, subtask/checklist, progress project berbobot task, ADR-039–050
 - [docs/phase-4-ticketing.md](docs/phase-4-ticketing.md) — ticket, Department Inbox, accept/assign/transfer, lifecycle, conversation & lampiran privat, ADR-051–065
+- [docs/phase-5-workflow-approval.md](docs/phase-5-workflow-approval.md) — workflow ber-versi, transition engine, approval engine, My Approvals, ADR-066–075
 - `.ai/guidelines/harmaworkspace.md` — aturan proyek untuk AI agent; jalankan `php artisan boost:install` untuk membangkitkan `CLAUDE.md`

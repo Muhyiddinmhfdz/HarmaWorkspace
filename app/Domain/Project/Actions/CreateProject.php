@@ -9,9 +9,12 @@ use App\Domain\Project\Support\VisibilityGuard;
 use App\Domain\Shared\Exceptions\BusinessRuleException;
 use App\Domain\System\Numbering\NumberGenerator;
 use App\Domain\System\Settings\SettingKey;
+use App\Domain\Workflow\Support\WorkflowGate;
+use App\Domain\Workflow\Support\WorkflowRegistry;
 use App\Enums\MasterScope;
 use App\Enums\ProgressMode;
 use App\Enums\ProjectVisibility;
+use App\Enums\WorkflowEntity;
 use App\Models\Client;
 use App\Models\Project;
 use App\Models\ProjectCategory;
@@ -33,10 +36,12 @@ class CreateProject
         private ScopedMasterGuard $masters,
         private ProjectGuard $guard,
         private VisibilityGuard $visibilityGuard,
+        private WorkflowRegistry $workflows,
+        private WorkflowGate $workflow,
     ) {}
 
     /**
-     * @param  array{name: string, description?: string|null, client_id?: int|null, project_category_id: int, priority_id: int, visibility?: string, owner_id?: int|null, project_manager_id: int, lead_department_id: int, lead_user_id?: int|null, supporting_department_ids?: list<int>, start_date: string, end_date: string}  $data
+     * @param  array{name: string, workflow_id?: int|null, description?: string|null, client_id?: int|null, project_category_id: int, priority_id: int, visibility?: string, owner_id?: int|null, project_manager_id: int, lead_department_id: int, lead_user_id?: int|null, supporting_department_ids?: list<int>, start_date: string, end_date: string}  $data
      */
     public function handle(array $data, User $actor): Project
     {
@@ -48,7 +53,8 @@ class CreateProject
         }
 
         $priority = $this->masters->priority((int) $data['priority_id'], MasterScope::Project);
-        $status = $this->masters->initialStatus(MasterScope::Project);
+        $version = $this->workflows->versionForNew(WorkflowEntity::Project, filled($data['workflow_id'] ?? null) ? (int) $data['workflow_id'] : null);
+        $status = $this->workflows->initialState($version)->status;
         $health = ProjectHealthStatus::query()->active()->where('is_default', true)->first()
             ?? throw new BusinessRuleException('Belum ada Project Health default. Atur di Master Data.');
 
@@ -68,7 +74,7 @@ class CreateProject
             throw new BusinessRuleException('Lead department tidak boleh dipilih lagi sebagai supporting department.');
         }
 
-        return DB::transaction(function () use ($data, $actor, $start, $end, $priority, $status, $health, $manager, $owner, $leadDepartmentId, $supportingIds, $visibility): Project {
+        return DB::transaction(function () use ($data, $actor, $start, $end, $priority, $status, $health, $manager, $owner, $leadDepartmentId, $supportingIds, $visibility, $version): Project {
             $project = new Project([
                 'name' => $data['name'],
                 'description' => $data['description'] ?? null,
@@ -81,6 +87,7 @@ class CreateProject
                 'number' => $this->numbers->next('project', SettingKey::ProjectNumberPrefix),
                 'visibility' => $visibility,
                 'status_id' => $status->id,
+                'workflow_version_id' => $version->id,
                 'health_status_id' => $health->id,
                 'owner_id' => $owner?->id,
                 'project_manager_id' => $manager->id,
@@ -116,6 +123,7 @@ class CreateProject
                 'lead_department' => $lead->name,
                 'supporting_departments' => $supportingNames,
             ]);
+            $this->workflow->record($project, null, null, $status, $actor, null, ['event' => 'created']);
 
             return $project;
         });

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders\Development;
 
+use App\Domain\Approval\Actions\ManageApprovalTemplates;
 use App\Domain\Organization\Actions\CreateUser;
 use App\Domain\Project\Actions\ChangeProjectProgressMode;
 use App\Domain\Project\Actions\ChangeProjectStatus;
@@ -17,8 +18,14 @@ use App\Domain\Ticket\Actions\AcceptTicket;
 use App\Domain\Ticket\Actions\ChangeTicketStatus;
 use App\Domain\Ticket\Actions\CreateTicket;
 use App\Domain\Ticket\Actions\ManageTicketAssignments;
+use App\Domain\Workflow\Actions\CreateWorkflow;
+use App\Domain\Workflow\Actions\ExecuteWorkflowTransition;
+use App\Domain\Workflow\Actions\ManageWorkflowDraft;
+use App\Domain\Workflow\Actions\PublishWorkflowVersion;
 use App\Enums\MasterScope;
 use App\Enums\ProgressMode;
+use App\Enums\WorkflowRuleType;
+use App\Models\ApprovalTemplate;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\Position;
@@ -38,6 +45,8 @@ use App\Models\TicketSource;
 use App\Models\TicketSubcategory;
 use App\Models\TicketType;
 use App\Models\User;
+use App\Models\Workflow;
+use App\Models\WorkflowTransition;
 use Closure;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Auth;
@@ -114,6 +123,7 @@ class DevelopmentSeeder extends Seeder
         $this->seedProjects($departments->all());
         $this->seedTasks();
         $this->seedTickets();
+        $this->seedWorkflowDemo();
     }
 
     /**
@@ -256,7 +266,87 @@ class DevelopmentSeeder extends Seeder
     }
 
     /**
-     * @param  array{title: string, ticket_type_id: int, ticket_category_id: int, current_department_id: int, description?: string, priority_id?: int, ticket_subcategory_id?: int|null, ticket_source_id?: int|null, client_id?: int|null, project_id?: int|null, task_id?: int|null, due_date?: string|null}  $data
+     * Demo approval templates and two published, non-default workflows that
+     * use them (default workflows stay untouched), plus one ticket waiting
+     * for its first approval step.
+     */
+    private function seedWorkflowDemo(): void
+    {
+        if (ApprovalTemplate::query()->exists()) {
+            return;
+        }
+
+        $admin = User::role(config('harma.super_admin_role'))->first();
+        $users = User::query()->whereIn('username', ['andi', 'budi', 'sari', 'dewi'])->get()->keyBy('username');
+
+        if ($admin === null || $users->count() < 4) {
+            return;
+        }
+
+        $templates = app(ManageApprovalTemplates::class);
+        $department = fn (string $code): int => (int) Department::query()->where('code', $code)->value('id');
+
+        $ticketApproval = $templates->save(null, ['name' => 'Ticket QA + TS Approval', 'entity_type' => 'ticket', 'description' => 'Review oleh lead programmer lalu diterima Technical Support.'], $admin);
+        $templates->saveStep($ticketApproval, null, ['name' => 'Programmer Lead Review', 'approver_type' => 'department_leader', 'department_id' => $department('DEV')]);
+        $templates->saveStep($ticketApproval, null, ['name' => 'Technical Support Acceptance', 'approver_type' => 'department_leader', 'department_id' => $department('TS')]);
+
+        $taskApproval = $templates->save(null, ['name' => 'Task Simple Review', 'entity_type' => 'task', 'description' => 'Leader department task menyetujui penyelesaian.'], $admin);
+        $templates->saveStep($taskApproval, null, ['name' => 'Department Lead Review', 'approver_type' => 'department_leader']);
+
+        $bugWorkflow = $this->workflowWithApproval('ticket', 'Bug Ticket Workflow (QA + TS)', 'IN_REVIEW', 'RESOLVED', $ticketApproval->id, $admin);
+        $this->workflowWithApproval('task', 'Task with Review Approval', 'IN_REVIEW', 'DONE', $taskApproval->id, $admin);
+
+        // A bug ticket waiting for the first approval step (Andi leads DEV).
+        $ticket = $this->createTicketAs($users['dewi'], [
+            'title' => 'Tombol simpan tidak merespons di form retur',
+            'ticket_type_id' => (int) TicketType::query()->where('code', 'BUG')->value('id'),
+            'ticket_category_id' => (int) TicketCategory::query()->where('code', 'APPLICATION')->value('id'),
+            'current_department_id' => $department('DEV'),
+            'workflow_id' => $bugWorkflow->id,
+        ]);
+        $this->as($users['andi'], fn () => app(ManageTicketAssignments::class)->assign($ticket, $users['budi']->id, $users['andi']));
+        $this->as($users['budi'], function () use ($ticket, $users): void {
+            app(ChangeTicketStatus::class)->start($ticket->refresh(), $users['budi']);
+            app(ChangeTicketStatus::class)->sendToReview($ticket->refresh(), $users['budi'], 'Sudah diperbaiki, mohon dicek.');
+        });
+
+        $resolve = WorkflowTransition::query()->where('workflow_version_id', $ticket->refresh()->workflow_version_id)->where('operation', 'resolve')->firstOrFail();
+        $resolution = (int) TicketResolution::query()->where('code', 'FIXED')->value('id');
+        $this->as($users['dewi'], fn () => app(ExecuteWorkflowTransition::class)->handle($ticket->refresh(), $resolve->id, $users['dewi'], ['resolution_id' => $resolution, 'notes' => 'Tombol sudah berfungsi di staging.']));
+    }
+
+    /**
+     * Copy of the default workflow where one transition requires approval.
+     */
+    private function workflowWithApproval(string $entity, string $name, string $fromCode, string $toCode, int $templateId, User $admin): Workflow
+    {
+        $default = Workflow::query()->where('entity_type', $entity)->where('is_default', true)->firstOrFail();
+        $workflow = app(CreateWorkflow::class)->handle(['name' => $name, 'entity_type' => $entity, 'copy_from_workflow_id' => $default->id, 'description' => 'Contoh workflow dengan approval (data demo).'], $admin);
+        $draft = $workflow->draftVersion()->firstOrFail();
+        $transition = WorkflowTransition::query()->where('workflow_version_id', $draft->id)
+            ->whereHas('fromState', fn ($query) => $query->where('code', $fromCode))
+            ->whereHas('toState', fn ($query) => $query->where('code', $toCode))
+            ->with('rules')
+            ->firstOrFail();
+
+        app(ManageWorkflowDraft::class)->saveTransition($draft, $transition, [
+            'from_state_id' => $transition->from_state_id,
+            'to_state_id' => $transition->to_state_id,
+            'action_label' => $transition->action_label,
+            'operation' => $transition->operation,
+            'roles' => $transition->rule(WorkflowRuleType::ContextRole)?->values('roles') ?? [],
+            'permissions' => $transition->rule(WorkflowRuleType::Permission)?->values('permissions') ?? [],
+            'requirements' => array_values($transition->rules->reject(fn ($rule) => $rule->type->isWhoRule())->map(fn ($rule): string => $rule->type->value)->all()),
+            'approval_template_id' => $templateId,
+        ], $admin);
+
+        app(PublishWorkflowVersion::class)->handle($draft, $admin);
+
+        return $workflow;
+    }
+
+    /**
+     * @param  array{title: string, ticket_type_id: int, ticket_category_id: int, current_department_id: int, workflow_id?: int|null, description?: string, priority_id?: int, ticket_subcategory_id?: int|null, ticket_source_id?: int|null, client_id?: int|null, project_id?: int|null, task_id?: int|null, due_date?: string|null}  $data
      */
     private function createTicketAs(User $requester, array $data): Ticket
     {

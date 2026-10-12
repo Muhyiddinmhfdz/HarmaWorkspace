@@ -94,6 +94,8 @@ Master Data Center mendapat tipe field baru `relation` (Subcategory → parent C
 
 Semantik di kode: *aktif* = tidak terminal dan tidak completed; *resolved* = completed dan tidak terminal; *closed* = completed dan terminal. Nama status bebas diubah admin.
 
+> Sejak Phase 5 peta transisi ini menjadi **Default Ticket Workflow** v1 dan kelas lifecycle dihapus; lihat [phase-5-workflow-approval.md](phase-5-workflow-approval.md).
+
 `TicketLifecycle` (berbasis code, satu tempat):
 
 ```

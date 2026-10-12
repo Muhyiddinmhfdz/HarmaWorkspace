@@ -4,17 +4,18 @@ use App\Domain\Audit\AuditLogger;
 use App\Domain\Project\Actions\ArchiveProject;
 use App\Domain\Project\Actions\ChangeProjectProgressMode;
 use App\Domain\Project\Actions\ChangeProjectSchedule;
-use App\Domain\Project\Actions\ChangeProjectStatus;
 use App\Domain\Project\Actions\ChangeProjectVisibility;
-use App\Domain\Project\Actions\CompleteProject;
 use App\Domain\Project\Actions\UpdateProjectHealth;
 use App\Domain\Project\Actions\UpdateProjectProgress;
-use App\Domain\Project\Support\ProjectLifecycle;
+use App\Domain\Shared\Exceptions\BusinessRuleException;
 use App\Domain\Project\Support\ProjectProgressCalculator;
 use App\Domain\Project\Support\VisibilityGuard;
 use App\Enums\ProgressMode;
 use App\Enums\ProjectVisibility;
 use App\Livewire\Concerns\WithFeedback;
+use App\Livewire\Concerns\WithWorkflowTransitions;
+use App\Models\WorkflowTransition;
+use Illuminate\Database\Eloquent\Model;
 use App\Models\Activity;
 use App\Models\Project;
 use App\Models\ProjectHealthStatus;
@@ -30,7 +31,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 
 new class extends Component {
-    use WithFeedback;
+    use WithFeedback, WithWorkflowTransitions;
 
     public const array TABS = ['overview' => 'Overview', 'tasks' => 'Tasks', 'tickets' => 'Tickets', 'milestones' => 'Milestones', 'team' => 'Team', 'activity' => 'Activity'];
 
@@ -73,7 +74,7 @@ new class extends Component {
     #[On('project-updated')]
     public function refreshProject(): void
     {
-        unset($this->project, $this->can, $this->transitions, $this->upcomingMilestones, $this->recentActivity, $this->lastScheduleChange, $this->taskSummary, $this->departmentProgress, $this->upcomingTasks, $this->canCompleteNow, $this->ticketSummary);
+        unset($this->project, $this->can, $this->transitions, $this->upcomingMilestones, $this->recentActivity, $this->lastScheduleChange, $this->taskSummary, $this->departmentProgress, $this->upcomingTasks, $this->canCompleteNow, $this->ticketSummary, $this->pendingTransition);
     }
 
     #[Computed]
@@ -132,6 +133,7 @@ new class extends Component {
     {
         return Activity::query()
             ->inLog(AuditLogger::LOG_NAME)
+            ->where('event', '!=', 'workflow.transition_executed')
             ->where('subject_type', 'project')
             ->where('subject_id', $this->projectId)
             ->with('causer:id,name')
@@ -228,30 +230,39 @@ new class extends Component {
     #[Computed]
     public function transitions(): array
     {
-        $lifecycle = app(ProjectLifecycle::class);
-        $current = $this->project->status;
-
         if ($this->project->isArchived()) {
             return [];
         }
 
-        return $lifecycle->targets($current)
-            ->reject(fn (Status $target): bool => $target->counts_as_completed)
-            ->filter(fn (Status $target): bool => $target->is_terminal ? $this->can['complete'] : $this->can['update'])
-            ->map(fn (Status $target): array => [
-                'status' => $target,
-                'label' => $lifecycle->label($current, $target),
-                'danger' => $target->is_terminal,
-            ])
-            ->values()
-            ->all();
+        return array_values(array_map(fn (WorkflowTransition $transition): array => [
+            'id' => $transition->id,
+            'status' => $transition->toState->status,
+            'label' => $transition->action_label,
+            'confirm' => $transition->confirmation_message,
+            'approval' => $transition->requiresApproval(),
+            'danger' => $transition->toState->status->is_terminal,
+        ], array_filter($this->availableTransitions(), fn (WorkflowTransition $transition): bool => $transition->operation !== 'complete')));
     }
 
     #[Computed]
     public function canCompleteNow(): bool
     {
-        return $this->can['complete']
-            && app(ProjectLifecycle::class)->targets($this->project->status)->contains(fn (Status $target): bool => $target->counts_as_completed);
+        return ! $this->project->isArchived() && $this->completeTransition() !== null;
+    }
+
+    private function completeTransition(): ?WorkflowTransition
+    {
+        return collect($this->availableTransitions())->first(fn (WorkflowTransition $transition): bool => $transition->operation === 'complete');
+    }
+
+    protected function workflowRecord(): Model
+    {
+        return $this->project;
+    }
+
+    protected function afterWorkflowTransition(): void
+    {
+        $this->refreshProject();
     }
 
     /**
@@ -263,15 +274,17 @@ new class extends Component {
         return ProjectHealthStatus::query()->active()->where('represents_completion', false)->orderBy('level')->get();
     }
 
-    public function moveToStatus(int $statusId, ChangeProjectStatus $changeStatus): void
+    public function moveToStatus(int $statusId): void
     {
-        $target = Status::query()->findOrFail($statusId);
-        $this->authorize($target->is_terminal ? 'complete' : 'update', $this->project);
+        $transition = $this->outgoingTransition(fn (WorkflowTransition $candidate): bool => $candidate->toState->status_id === $statusId && $candidate->operation !== 'complete');
 
-        $changeStatus->handle($this->project, $target->id, auth()->user());
+        if ($transition === null) {
+            $target = Status::query()->findOrFail($statusId);
 
-        $this->notify('success', 'Status project diubah menjadi '.$target->name.'.');
-        $this->refreshProject();
+            throw new BusinessRuleException('Status Project tidak dapat diubah dari '.$this->project->status->name.' ke '.$target->name.'.');
+        }
+
+        $this->startTransition($transition->id);
     }
 
     public function openProgressMode(): void
@@ -389,22 +402,26 @@ new class extends Component {
 
     public function openComplete(): void
     {
-        abort_unless($this->can['complete'], 403);
+        abort_unless($this->canCompleteNow, 403);
         $this->completedOn = today()->toDateString();
         $this->resetValidation();
         Flux::modal('project-complete')->show();
     }
 
-    public function complete(CompleteProject $completeProject): void
+    public function complete(): void
     {
-        $this->authorize('complete', $this->project);
+        $this->authorize('view', $this->project);
+        $transition = $this->completeTransition();
+        abort_if($transition === null, 403);
         $this->validate(['completedOn' => ['required', 'date', 'before_or_equal:today']], attributes: ['completedOn' => 'Completion date']);
 
-        $completeProject->handle($this->project, auth()->user(), $this->completedOn);
+        $outcome = $this->runTransition($transition->id, ['actual_end' => $this->completedOn]);
 
         Flux::modal('project-complete')->close();
-        $this->notify('success', 'Project berhasil diselesaikan.');
-        $this->refreshProject();
+
+        if (! $outcome->awaitsApproval()) {
+            $this->notify('success', 'Project berhasil diselesaikan.');
+        }
     }
 
     public function toggleArchive(ArchiveProject $archiveProject): void
@@ -459,12 +476,15 @@ new class extends Component {
                         <flux:menu>
                             @foreach ($this->transitions as $transition)
                                 @if ($transition['danger'])
-                                    <flux:menu.item icon="x-circle" variant="danger" wire:key="tr-{{ $transition['status']->id }}"
-                                        x-on:click="hwConfirm({ title: 'Batalkan project?', text: 'Project akan berakhir dengan status {{ $transition['status']->name }}. Data dan riwayat tetap tersimpan.', confirmText: 'Batalkan project', cancelText: 'Kembali', danger: true }).then(ok => ok && $wire.moveToStatus({{ $transition['status']->id }}))">
+                                    <flux:menu.item icon="x-circle" variant="danger" wire:key="tr-{{ $transition['id'] }}"
+                                        x-on:click="hwConfirm({ title: @js($transition['label'].'?'), text: @js($transition['confirm'] ?? 'Project akan berakhir dengan status '.$transition['status']->name.'. Data dan riwayat tetap tersimpan.'), confirmText: @js($transition['label']), cancelText: 'Kembali', danger: true }).then(ok => ok && $wire.startTransition({{ $transition['id'] }}))">
                                         {{ $transition['label'] }}
                                     </flux:menu.item>
+                                @elseif ($transition['confirm'])
+                                    <flux:menu.item icon="arrow-right-circle" wire:key="tr-{{ $transition['id'] }}"
+                                        x-on:click="hwConfirm({ title: @js($transition['label'].'?'), text: @js($transition['confirm']), confirmText: @js($transition['label']) }).then(ok => ok && $wire.startTransition({{ $transition['id'] }}))">{{ $transition['label'] }}</flux:menu.item>
                                 @else
-                                    <flux:menu.item icon="arrow-right-circle" wire:key="tr-{{ $transition['status']->id }}" wire:click="moveToStatus({{ $transition['status']->id }})">{{ $transition['label'] }}</flux:menu.item>
+                                    <flux:menu.item :icon="$transition['approval'] ? 'shield-check' : 'arrow-right-circle'" wire:key="tr-{{ $transition['id'] }}" wire:click="startTransition({{ $transition['id'] }})">{{ $transition['label'] }}@if ($transition['approval']) <span class="ms-1 text-xs text-zinc-400">(approval)</span>@endif</flux:menu.item>
                                 @endif
                             @endforeach
                             @if ($this->transitions !== [])
@@ -555,6 +575,10 @@ new class extends Component {
             @endforeach
         </nav>
     </div>
+
+    <livewire:approvals.progress subject-type="project" :subject-id="$project->id" spacing="mb-6" wire:key="approval-progress-{{ $project->id }}" />
+
+    @include('partials.workflow.transition-modal')
 
     @if ($tab === 'overview')
         @php($summary = $this->taskSummary)

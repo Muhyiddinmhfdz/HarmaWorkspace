@@ -1,12 +1,15 @@
 <?php
 
 use App\Domain\Task\Actions\ChangeTaskSchedule;
-use App\Domain\Task\Actions\ChangeTaskStatus;
 use App\Domain\Task\Actions\ManageTaskAssignments;
 use App\Domain\Task\Actions\UpdateTaskProgress;
-use App\Domain\Task\Support\TaskLifecycle;
+use App\Domain\Shared\Exceptions\BusinessRuleException;
+use App\Domain\Workflow\Support\TransitionRules;
 use App\Domain\Task\Support\TaskWeight;
 use App\Livewire\Concerns\WithFeedback;
+use App\Livewire\Concerns\WithWorkflowTransitions;
+use App\Models\WorkflowTransition;
+use Illuminate\Database\Eloquent\Model;
 use App\Models\Status;
 use App\Models\Task;
 use Flux\Flux;
@@ -16,7 +19,7 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
-    use WithFeedback;
+    use WithFeedback, WithWorkflowTransitions;
 
     #[Locked]
     public int $taskId;
@@ -47,7 +50,7 @@ new class extends Component {
     #[On('task-updated')]
     public function refreshTask(): void
     {
-        unset($this->task, $this->can, $this->transitions);
+        unset($this->task, $this->can, $this->transitions, $this->pendingTransition);
     }
 
     #[Computed]
@@ -95,31 +98,44 @@ new class extends Component {
         ];
     }
 
+    protected function workflowRecord(): Model
+    {
+        return $this->task;
+    }
+
+    protected function afterWorkflowTransition(): void
+    {
+        $this->afterChange();
+    }
+
     /**
-     * Valid lifecycle actions from the current status, filtered by ability.
+     * Actions from the task's workflow version the user may run now
+     * (no free status dropdown). Read-only for archived/finished projects.
      *
-     * @return list<array{status: Status, label: string, kind: string}>
+     * @return list<array{id: int, status: Status, label: string, kind: string, confirm: string|null}>
      */
     #[Computed]
     public function transitions(): array
     {
-        $lifecycle = app(TaskLifecycle::class);
-        $from = $this->task->status;
+        $task = $this->task;
 
-        return $lifecycle->targets($from)
-            ->filter(fn (Status $to): bool => $this->can[$lifecycle->abilityFor($from, $to)] ?? false)
-            ->map(fn (Status $to): array => [
-                'status' => $to,
-                'label' => $lifecycle->label($from, $to),
-                'kind' => match (true) {
-                    $to->is_blocked => 'block',
-                    $to->counts_as_completed => 'complete',
-                    $to->is_terminal => 'cancel',
-                    default => 'normal',
-                },
-            ])
-            ->values()
-            ->all();
+        if ($task->project !== null && ($task->project->isArchived() || $task->project->status->is_terminal)) {
+            return [];
+        }
+
+        return array_map(fn (WorkflowTransition $transition): array => [
+            'id' => $transition->id,
+            'status' => $transition->toState->status,
+            'label' => $transition->action_label,
+            'confirm' => $transition->confirmation_message,
+            'kind' => match (true) {
+                $transition->requiresApproval() => 'approval',
+                $transition->toState->status->is_blocked => 'block',
+                $transition->toState->status->counts_as_completed => 'complete',
+                $transition->toState->status->is_terminal => 'cancel',
+                default => 'normal',
+            },
+        ], $this->availableTransitions());
     }
 
     /**
@@ -137,13 +153,25 @@ new class extends Component {
         return array_values(array_unique([$project->project_manager_id, ...array_map(intval(...), $project->members()->pluck('user_id')->all())]));
     }
 
-    public function moveToStatus(int $statusId, ChangeTaskStatus $changeStatus): void
+    /**
+     * Move to a target status through the workflow (kept for status-based
+     * callers): blocked targets ask for the blocker reason first.
+     */
+    public function moveToStatus(int $statusId): void
     {
-        $target = Status::query()->findOrFail($statusId);
-        $this->authorize(app(TaskLifecycle::class)->abilityFor($this->task->status, $target), $this->task);
+        $transition = $this->outgoingTransition(fn (WorkflowTransition $candidate): bool => $candidate->toState->status_id === $statusId);
 
-        if ($target->is_blocked) {
-            $this->blockStatusId = $target->id;
+        if ($transition === null) {
+            $target = Status::query()->findOrFail($statusId);
+
+            throw new BusinessRuleException('Status Task tidak dapat diubah dari '.$this->task->status->name.' ke '.$target->name.'.');
+        }
+
+        if ($transition->toState->status->is_blocked && ! $transition->requiresApproval()) {
+            $this->authorize('view', $this->task);
+            abort_unless(app(TransitionRules::class)->canPerform(auth()->user(), $this->task, $transition), 403);
+
+            $this->blockStatusId = $statusId;
             $this->blockReason = '';
             $this->resetValidation();
             Flux::modal('task-block')->show();
@@ -151,22 +179,19 @@ new class extends Component {
             return;
         }
 
-        $changeStatus->handle($this->task, $target->id, auth()->user());
-
-        $this->notify('success', 'Status task diubah menjadi '.$target->name.'.');
-        $this->afterChange();
+        $this->startTransition($transition->id);
     }
 
-    public function block(ChangeTaskStatus $changeStatus): void
+    public function block(): void
     {
-        $this->authorize('work', $this->task);
         $this->validate(['blockReason' => ['required', 'string', 'min:5', 'max:1000']], attributes: ['blockReason' => 'Reason']);
 
-        $changeStatus->handle($this->task, (int) $this->blockStatusId, auth()->user(), $this->blockReason);
+        $transition = $this->outgoingTransition(fn (WorkflowTransition $candidate): bool => $candidate->toState->status_id === $this->blockStatusId)
+            ?? throw new BusinessRuleException('Status sudah berubah. Muat ulang data terbaru.');
+
+        $this->runTransition($transition->id, ['reason' => $this->blockReason]);
 
         Flux::modal('task-block')->close();
-        $this->notify('warning', 'Task ditandai blocked.');
-        $this->afterChange();
     }
 
     public function openProgress(): void
@@ -314,22 +339,30 @@ new class extends Component {
                             @foreach ($this->transitions as $transition)
                                 @switch($transition['kind'])
                                     @case('cancel')
-                                        <flux:menu.item icon="x-circle" variant="danger" wire:key="tr-{{ $transition['status']->id }}"
-                                            x-on:click="hwConfirm({ title: 'Batalkan task?', text: 'Task tidak lagi dihitung dalam progress project. Riwayatnya tetap tersimpan.', confirmText: 'Batalkan task', cancelText: 'Kembali', danger: true }).then(ok => ok && $wire.moveToStatus({{ $transition['status']->id }}))">
+                                        <flux:menu.item icon="x-circle" variant="danger" wire:key="tr-{{ $transition['id'] }}"
+                                            x-on:click="hwConfirm({ title: @js($transition['label'].'?'), text: @js($transition['confirm'] ?? 'Task tidak lagi dihitung dalam progress project. Riwayatnya tetap tersimpan.'), confirmText: @js($transition['label']), cancelText: 'Kembali', danger: true }).then(ok => ok && $wire.startTransition({{ $transition['id'] }}))">
                                             {{ $transition['label'] }}
                                         </flux:menu.item>
                                         @break
                                     @case('complete')
-                                        <flux:menu.item icon="check-badge" wire:key="tr-{{ $transition['status']->id }}"
-                                            x-on:click="hwConfirm({ title: 'Tandai task selesai?', text: 'Progress menjadi 100% dan tanggal selesai aktual dicatat.', confirmText: 'Tandai selesai' }).then(ok => ok && $wire.moveToStatus({{ $transition['status']->id }}))">
+                                        <flux:menu.item icon="check-badge" wire:key="tr-{{ $transition['id'] }}"
+                                            x-on:click="hwConfirm({ title: @js($transition['label'].'?'), text: @js($transition['confirm'] ?? 'Progress menjadi 100% dan tanggal selesai aktual dicatat.'), confirmText: @js($transition['label']) }).then(ok => ok && $wire.startTransition({{ $transition['id'] }}))">
                                             {{ $transition['label'] }}
                                         </flux:menu.item>
                                         @break
                                     @case('block')
-                                        <flux:menu.item icon="no-symbol" wire:key="tr-{{ $transition['status']->id }}" wire:click="moveToStatus({{ $transition['status']->id }})">{{ $transition['label'] }}</flux:menu.item>
+                                        <flux:menu.item icon="no-symbol" wire:key="tr-{{ $transition['id'] }}" wire:click="moveToStatus({{ $transition['status']->id }})">{{ $transition['label'] }}</flux:menu.item>
+                                        @break
+                                    @case('approval')
+                                        <flux:menu.item icon="shield-check" wire:key="tr-{{ $transition['id'] }}" wire:click="startTransition({{ $transition['id'] }})">{{ $transition['label'] }} <span class="ms-1 text-xs text-zinc-400">(approval)</span></flux:menu.item>
                                         @break
                                     @default
-                                        <flux:menu.item icon="arrow-right-circle" wire:key="tr-{{ $transition['status']->id }}" wire:click="moveToStatus({{ $transition['status']->id }})">{{ $transition['label'] }}</flux:menu.item>
+                                        @if ($transition['confirm'])
+                                            <flux:menu.item icon="arrow-right-circle" wire:key="tr-{{ $transition['id'] }}"
+                                                x-on:click="hwConfirm({ title: @js($transition['label'].'?'), text: @js($transition['confirm']), confirmText: @js($transition['label']) }).then(ok => ok && $wire.startTransition({{ $transition['id'] }}))">{{ $transition['label'] }}</flux:menu.item>
+                                        @else
+                                            <flux:menu.item icon="arrow-right-circle" wire:key="tr-{{ $transition['id'] }}" wire:click="startTransition({{ $transition['id'] }})">{{ $transition['label'] }}</flux:menu.item>
+                                        @endif
                                 @endswitch
                             @endforeach
                             @if ($this->transitions !== [] && ($can['work'] || $can['schedule']))
@@ -372,6 +405,8 @@ new class extends Component {
                 <flux:heading size="lg">Description</flux:heading>
                 <flux:text class="mt-2 whitespace-pre-line">{{ $task->description ?: 'Belum ada deskripsi.' }}</flux:text>
             </flux:card>
+
+            <livewire:approvals.progress subject-type="task" :subject-id="$task->id" wire:key="approval-progress-{{ $task->id }}" />
 
             <livewire:tasks.subtasks :task-id="$task->id" wire:key="subtasks-{{ $task->id }}" />
 
@@ -470,6 +505,8 @@ new class extends Component {
     </div>
 
     {{-- Modals --}}
+    @include('partials.workflow.transition-modal')
+
     <flux:modal name="task-block" class="w-full max-w-md">
         <form wire:submit="block" class="space-y-6">
             <div>

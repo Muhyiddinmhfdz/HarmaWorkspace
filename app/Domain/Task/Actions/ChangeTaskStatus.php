@@ -7,7 +7,8 @@ use App\Domain\Project\Actions\RecalculateProjectProgress;
 use App\Domain\Shared\Exceptions\BusinessRuleException;
 use App\Domain\Task\Support\TaskAudit;
 use App\Domain\Task\Support\TaskGuard;
-use App\Domain\Task\Support\TaskLifecycle;
+use App\Domain\Workflow\Support\TransitionContext;
+use App\Domain\Workflow\Support\WorkflowGate;
 use App\Enums\MasterScope;
 use App\Models\Task;
 use App\Models\User;
@@ -15,7 +16,8 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The only write path for task status, along TaskLifecycle. Side effects
+ * The only write path for task status. Which changes are allowed comes from
+ * the task's workflow version (WorkflowGate, ADR-066). Side effects
  * (ADR-043/049) are driven by status flags:
  *
  * - started status, no actual start yet → actual_start = today;
@@ -32,23 +34,20 @@ class ChangeTaskStatus
     public function __construct(
         private ScopedMasterGuard $masters,
         private TaskGuard $guard,
-        private TaskLifecycle $lifecycle,
+        private WorkflowGate $workflow,
         private TaskAudit $audit,
         private RecalculateProjectProgress $recalculate,
     ) {}
 
-    public function handle(Task $task, int $statusId, User $actor, ?string $reason = null): Task
+    public function handle(Task $task, int $statusId, User $actor, ?string $reason = null, ?TransitionContext $context = null): Task
     {
         $this->guard->ensureEditable($task);
         $target = $this->masters->status($statusId, MasterScope::Task);
 
-        return DB::transaction(function () use ($task, $target, $actor, $reason): Task {
+        return DB::transaction(function () use ($task, $target, $actor, $reason, $context): Task {
             $task = Task::query()->with('status')->lockForUpdate()->findOrFail($task->id);
             $from = $task->status;
-
-            if (! $this->lifecycle->allows($from, $target)) {
-                throw new BusinessRuleException($this->lifecycle->rejectionMessage($from, $target));
-            }
+            $transition = $this->workflow->resolve($task, $from, $target, $context);
 
             if ($target->is_blocked && blank($reason)) {
                 throw new BusinessRuleException('Alasan blocker wajib diisi.');
@@ -93,6 +92,7 @@ class ChangeTaskStatus
                 old: ['status' => $from->name], new: ['status' => $target->name],
                 properties: ['reason' => $target->is_blocked ? $reason : null]);
 
+            $this->workflow->record($task, $transition, $from, $target, $actor, $reason, array_filter(['approval_request_id' => $context?->approvalRequestId]));
             $this->recalculate->handle($task->project_id);
 
             return $task;

@@ -3,14 +3,19 @@
 use App\Domain\Ticket\Actions\AcceptTicket;
 use App\Domain\Ticket\Actions\ChangeTicketDeadline;
 use App\Domain\Ticket\Actions\ChangeTicketPriority;
-use App\Domain\Ticket\Actions\ChangeTicketStatus;
 use App\Domain\Ticket\Actions\ManageTicketAssignments;
 use App\Domain\Ticket\Actions\ManageTicketRelations;
 use App\Domain\Ticket\Actions\TransferTicket;
-use App\Domain\Ticket\Support\TicketLifecycle;
+use App\Domain\Shared\Exceptions\BusinessRuleException;
+use App\Domain\Workflow\Handlers\TicketTransitionHandler;
+use App\Domain\Workflow\Support\TransitionRules;
 use App\Enums\CommentKind;
 use App\Enums\MasterScope;
 use App\Livewire\Concerns\WithFeedback;
+use App\Livewire\Concerns\WithWorkflowTransitions;
+use App\Models\WorkflowTransition;
+use App\Models\WorkflowTransitionHistory;
+use Illuminate\Database\Eloquent\Model;
 use App\Models\Comment;
 use App\Models\DepartmentMembership;
 use App\Models\Priority;
@@ -29,7 +34,7 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
-    use WithFeedback;
+    use WithFeedback, WithWorkflowTransitions;
 
     #[Locked]
     public int $ticketId;
@@ -37,6 +42,10 @@ new class extends Component {
     /** Text-based lifecycle step currently open in the step modal. */
     #[Locked]
     public ?string $stepOperation = null;
+
+    /** Workflow transition behind the open domain modal (step, resolve, reject). */
+    #[Locked]
+    public ?int $domainTransitionId = null;
 
     public string $stepMessage = '';
 
@@ -79,7 +88,7 @@ new class extends Component {
     #[On('ticket-updated')]
     public function refreshTicket(): void
     {
-        unset($this->ticket, $this->can, $this->actions, $this->lastRequest, $this->relations);
+        unset($this->ticket, $this->can, $this->actions, $this->lastRequest, $this->relations, $this->pendingTransition);
     }
 
     #[Computed]
@@ -149,20 +158,20 @@ new class extends Component {
     #[Computed]
     public function actions(): array
     {
-        $lifecycle = app(TicketLifecycle::class);
         $ticket = $this->ticket;
-        $user = auth()->user();
-
-        $steps = collect($lifecycle->operations($ticket))
-            ->filter(fn (string $operation): bool => $user->can(TicketLifecycle::ABILITIES[$operation], $ticket))
-            ->mapWithKeys(fn (string $operation): array => [$operation => $lifecycle->label($operation, $ticket->status)]);
+        $steps = collect();
 
         if ($this->can['accept']) {
-            $steps->prepend('Accept', 'accept');
+            $steps->put('accept', 'Accept');
         }
 
         if ($this->can['assign'] && $ticket->picAssignment === null) {
             $steps->put('assign', 'Assign PIC');
+        }
+
+        foreach ($this->availableTransitions() as $transition) {
+            $key = $transition->operation === 'move' || $steps->has($transition->operation) ? 't'.$transition->id : $transition->operation;
+            $steps->put($key, $transition->action_label.($transition->requiresApproval() ? ' (approval)' : ''));
         }
 
         $primaryKey = collect(['accept', 'assign', 'provide_information', 'start', 'send_to_review', 'resolve', 'close'])
@@ -185,13 +194,55 @@ new class extends Component {
     #[Computed]
     public function lastRequest(): ?Comment
     {
+        $ticket = $this->ticket;
+        $lastStep = WorkflowTransitionHistory::query()
+            ->where('subject_type', 'ticket')
+            ->where('subject_id', $ticket->id)
+            ->with('transition:id,operation')
+            ->latest('id')
+            ->first();
+
         $kind = match (true) {
-            $this->ticket->status->is_blocked => CommentKind::InformationRequest,
-            app(TicketLifecycle::class)->isStatusOf('request_revision', $this->ticket->status) => CommentKind::RevisionRequest,
+            $ticket->status->is_blocked => CommentKind::InformationRequest,
+            $lastStep?->transition?->operation === 'request_revision' => CommentKind::RevisionRequest,
             default => null,
         };
 
-        return $kind === null ? null : $this->ticket->comments()->where('kind', $kind->value)->with('user:id,name')->latest('id')->first();
+        return $kind === null ? null : $ticket->comments()->where('kind', $kind->value)->with('user:id,name')->latest('id')->first();
+    }
+
+    public function isRevisionRequested(): bool
+    {
+        return ! $this->ticket->status->is_blocked && $this->lastRequest?->kind === CommentKind::RevisionRequest;
+    }
+
+    protected function workflowRecord(): Model
+    {
+        return $this->ticket;
+    }
+
+    protected function afterWorkflowTransition(): void
+    {
+        $this->refreshTicket();
+        $this->dispatch('ticket-updated');
+    }
+
+    /**
+     * The transition behind a domain operation from the current status, or
+     * a friendly error when the workflow does not offer it now.
+     */
+    private function transitionFor(string $operation): WorkflowTransition
+    {
+        $handler = app(TicketTransitionHandler::class);
+        $transition = $this->outgoingTransition(fn (WorkflowTransition $candidate): bool => $candidate->operation === $operation && $handler->isAvailable($this->ticket, $candidate));
+
+        if ($transition === null) {
+            throw new BusinessRuleException('Status Ticket tidak dapat diubah dari '.$this->ticket->status->name.' dengan aksi ini.');
+        }
+
+        abort_unless(app(TransitionRules::class)->canPerform(auth()->user(), $this->ticket, $transition), 403);
+
+        return $transition;
     }
 
     /**
@@ -249,63 +300,67 @@ new class extends Component {
      * Entry point for every lifecycle button: authorizes, then runs the step
      * directly or opens the modal that collects what the step needs.
      */
-    public function perform(string $key, ChangeTicketStatus $status, AcceptTicket $accept): void
+    public function perform(string $key, AcceptTicket $accept): void
     {
         $ticket = $this->ticket;
 
+        if ($key === 'accept') {
+            $this->authorize('accept', $ticket);
+            $accept->handle($ticket, auth()->user());
+            $this->done('Ticket berhasil diterima.');
+
+            return;
+        }
+
+        if ($key === 'assign') {
+            $this->authorize('assign', $ticket);
+            $this->openPic();
+
+            return;
+        }
+
+        if (preg_match('/^t(\d+)$/', $key, $matches) === 1) {
+            $this->startTransition((int) $matches[1]);
+
+            return;
+        }
+
+        abort_unless(in_array($key, ['start', 'close', 'resolve', 'reject', 'request_information', 'provide_information', 'send_to_review', 'request_revision', 'reopen', 'cancel'], true), 404);
+
+        $this->authorize('view', $ticket);
+        $transition = $this->transitionFor($key);
+
+        if ($transition->requiresApproval() && ! in_array($key, ['resolve', 'reject'], true)) {
+            $this->startTransition($transition->id);
+
+            return;
+        }
+
+        $this->domainTransitionId = $transition->id;
+
         switch ($key) {
-            case 'accept':
-                $this->authorize('accept', $ticket);
-                $accept->handle($ticket, auth()->user());
-                $this->done('Ticket berhasil diterima.');
-
-                return;
-            case 'assign':
-                $this->authorize('assign', $ticket);
-                $this->openPic();
-
-                return;
             case 'start':
-                $this->authorize('work', $ticket);
-                $status->start($ticket, auth()->user());
-                $this->done('Pekerjaan dimulai. Status ticket: In Progress.');
-
-                return;
             case 'close':
-                $this->authorize('close', $ticket);
-                $status->close($ticket, auth()->user());
-                $this->done('Ticket berhasil ditutup.');
+                $this->runTransition($transition->id);
 
                 return;
             case 'resolve':
-                $this->authorize('review', $ticket);
                 $this->reset('resolutionId', 'resolutionNotes', 'primaryTicketId');
                 $this->resetValidation();
                 Flux::modal('ticket-resolve')->show();
 
                 return;
             case 'reject':
-                $this->authorize('reject', $ticket);
                 $this->reset('rejectReasonId', 'rejectNotes');
                 $this->resetValidation();
                 Flux::modal('ticket-reject')->show();
 
                 return;
-            case 'request_information':
-            case 'provide_information':
-            case 'send_to_review':
-            case 'request_revision':
-            case 'reopen':
-            case 'cancel':
-                $this->authorize(TicketLifecycle::ABILITIES[$key], $ticket);
+            default:
                 $this->stepOperation = $key;
                 $this->stepMessage = '';
                 $this->resetValidation();
                 Flux::modal('ticket-step')->show();
-
-                return;
-            default:
-                abort(404);
         }
     }
 
@@ -325,56 +380,53 @@ new class extends Component {
         };
     }
 
-    public function submitStep(ChangeTicketStatus $status): void
+    public function submitStep(): void
     {
         $operation = (string) $this->stepOperation;
-        abort_unless(array_key_exists($operation, TicketLifecycle::ABILITIES), 404);
-        $ticket = $this->ticket;
-        $this->authorize(TicketLifecycle::ABILITIES[$operation], $ticket);
+        abort_unless(in_array($operation, ['request_information', 'provide_information', 'send_to_review', 'request_revision', 'reopen', 'cancel'], true), 404);
+        $transition = $this->transitionFor($operation);
 
         $required = $this->stepConfig()['required'];
         $this->validate(['stepMessage' => [$required ? 'required' : 'nullable', 'string', 'max:5000']], ['stepMessage.required' => 'Bagian ini wajib diisi.'], ['stepMessage' => 'Message']);
 
-        $user = auth()->user();
-        $message = match ($operation) {
-            'request_information' => [$status->requestInformation($ticket, $this->stepMessage, $user), 'Permintaan informasi dikirim ke requester.'],
-            'provide_information' => [$status->provideInformation($ticket, $this->stepMessage, $user), 'Informasi terkirim. Ticket kembali dikerjakan.'],
-            'send_to_review' => [$status->sendToReview($ticket, $user, $this->stepMessage ?: null), 'Ticket dikirim untuk direview.'],
-            'request_revision' => [$status->requestRevision($ticket, $this->stepMessage, $user), 'Permintaan revisi dikirim ke PIC.'],
-            'reopen' => [$status->reopen($ticket, $this->stepMessage, $user), 'Ticket dibuka kembali.'],
-            'cancel' => [$status->cancel($ticket, $this->stepMessage, $user), 'Ticket dibatalkan.'],
-            default => abort(404),
-        };
+        $input = in_array($operation, ['request_revision', 'reopen', 'cancel'], true)
+            ? ['reason' => $this->stepMessage]
+            : ['comment' => $this->stepMessage];
+
+        $this->runTransition($transition->id, array_filter($input, fn ($value) => $value !== ''));
 
         Flux::modal('ticket-step')->close();
         $this->stepOperation = null;
-        $this->done($message[1]);
     }
 
-    public function resolve(ChangeTicketStatus $status): void
+    public function resolve(): void
     {
-        $this->authorize('review', $this->ticket);
+        $this->authorize('view', $this->ticket);
+        $transition = $this->transitionFor('resolve');
         $this->validate([
             'resolutionId' => ['required', 'integer'],
             'resolutionNotes' => ['required', 'string', 'max:5000'],
             'primaryTicketId' => [$this->resolutionNeedsPrimary() ? 'required' : 'nullable', 'integer'],
         ], ['primaryTicketId.required' => 'Pilih ticket utama untuk resolusi ini.'], ['resolutionId' => 'Resolution', 'resolutionNotes' => 'Resolution notes']);
 
-        $status->resolve($this->ticket, (int) $this->resolutionId, $this->resolutionNotes, auth()->user(), $this->primaryTicketId);
+        $this->runTransition($transition->id, array_filter([
+            'resolution_id' => (int) $this->resolutionId,
+            'notes' => $this->resolutionNotes,
+            'primary_ticket_id' => $this->primaryTicketId,
+        ], fn ($value) => $value !== null));
 
         Flux::modal('ticket-resolve')->close();
-        $this->done('Ticket berhasil diselesaikan.');
     }
 
-    public function reject(ChangeTicketStatus $status): void
+    public function reject(): void
     {
-        $this->authorize('reject', $this->ticket);
+        $this->authorize('view', $this->ticket);
+        $transition = $this->transitionFor('reject');
         $this->validate(['rejectReasonId' => ['required', 'integer'], 'rejectNotes' => ['required', 'string', 'max:5000']], attributes: ['rejectReasonId' => 'Reason', 'rejectNotes' => 'Notes']);
 
-        $status->reject($this->ticket, (int) $this->rejectReasonId, $this->rejectNotes, auth()->user());
+        $this->runTransition($transition->id, ['rejection_reason_id' => (int) $this->rejectReasonId, 'notes' => $this->rejectNotes, 'reason' => $this->rejectNotes]);
 
         Flux::modal('ticket-reject')->close();
-        $this->done('Ticket ditolak.');
     }
 
     public function openPic(): void
@@ -625,7 +677,7 @@ new class extends Component {
                 </x-slot>
             @endif
         </flux:callout>
-    @elseif (app(\App\Domain\Ticket\Support\TicketLifecycle::class)->isStatusOf('request_revision', $ticket->status))
+    @elseif ($this->isRevisionRequested())
         <flux:callout variant="warning" icon="arrow-uturn-left" class="mb-6" heading="Revision Requested">
             <flux:callout.text>
                 @if ($this->lastRequest)
@@ -779,6 +831,8 @@ new class extends Component {
                 <flux:text class="mt-2 whitespace-pre-line [overflow-wrap:anywhere]">{{ $ticket->description }}</flux:text>
             </flux:card>
 
+            <livewire:approvals.progress subject-type="ticket" :subject-id="$ticket->id" wire:key="approval-progress-{{ $ticket->id }}" />
+
             <livewire:tickets.conversation :ticket-id="$ticket->id" wire:key="conversation-{{ $ticket->id }}" />
 
             <livewire:tickets.attachments :ticket-id="$ticket->id" wire:key="attachments-{{ $ticket->id }}" />
@@ -858,6 +912,8 @@ new class extends Component {
     </div>
 
     {{-- Modals --}}
+    @include('partials.workflow.transition-modal')
+
     <flux:modal name="ticket-step" class="w-full max-w-md">
         @php($step = $this->stepConfig())
         <form wire:submit="submitStep" class="space-y-6">

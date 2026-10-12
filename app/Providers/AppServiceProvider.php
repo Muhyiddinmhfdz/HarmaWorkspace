@@ -4,6 +4,11 @@ namespace App\Providers;
 
 use App\Domain\System\Settings\Settings;
 use App\Listeners\RecordLastLogin;
+use App\Models\ApprovalDecision;
+use App\Models\ApprovalRequest;
+use App\Models\ApprovalStep;
+use App\Models\ApprovalTemplate;
+use App\Models\ApprovalTemplateStep;
 use App\Models\Attachment;
 use App\Models\ChecklistItem;
 use App\Models\Client;
@@ -39,6 +44,12 @@ use App\Models\TicketTransfer;
 use App\Models\TicketTransferReason;
 use App\Models\TicketType;
 use App\Models\User;
+use App\Models\Workflow;
+use App\Models\WorkflowState;
+use App\Models\WorkflowTransition;
+use App\Models\WorkflowTransitionHistory;
+use App\Models\WorkflowTransitionRule;
+use App\Models\WorkflowVersion;
 use App\Policies\RolePolicy;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Events\Login;
@@ -134,6 +145,17 @@ class AppServiceProvider extends ServiceProvider
             'ticket_relation' => TicketRelation::class,
             'comment' => Comment::class,
             'attachment' => Attachment::class,
+            'workflow' => Workflow::class,
+            'workflow_version' => WorkflowVersion::class,
+            'workflow_state' => WorkflowState::class,
+            'workflow_transition' => WorkflowTransition::class,
+            'workflow_transition_rule' => WorkflowTransitionRule::class,
+            'workflow_transition_history' => WorkflowTransitionHistory::class,
+            'approval_template' => ApprovalTemplate::class,
+            'approval_template_step' => ApprovalTemplateStep::class,
+            'approval_request' => ApprovalRequest::class,
+            'approval_step' => ApprovalStep::class,
+            'approval_decision' => ApprovalDecision::class,
             'role' => Role::class,
             'permission' => Permission::class,
         ]);
@@ -152,6 +174,9 @@ class AppServiceProvider extends ServiceProvider
         Route::model('task', Task::class);
         Route::model('ticket', Ticket::class);
         Route::model('attachment', Attachment::class);
+        Route::model('workflow', Workflow::class);
+        Route::model('approvalTemplate', ApprovalTemplate::class);
+        Route::model('approvalRequest', ApprovalRequest::class);
     }
 
     protected function configureAuthorization(): void
@@ -163,5 +188,9 @@ class AppServiceProvider extends ServiceProvider
         Gate::before(function (User $user): ?bool {
             return $user->is_active && $user->isSuperAdmin() ? true : null;
         });
+
+        // Nobody holds this ability; only the Super Admin bypass above grants
+        // it, so workflow rules respect the single bypass without role checks.
+        Gate::define('workflow.bypass-rules', fn (User $user): bool => false);
     }
 }
