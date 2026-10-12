@@ -1,6 +1,7 @@
 <?php
 
 use App\Domain\Audit\AuditLogger;
+use App\Domain\Ticket\Support\TicketQueue;
 use App\Models\Activity;
 use App\Models\Client;
 use App\Models\Department;
@@ -9,6 +10,7 @@ use App\Models\Project;
 use App\Models\ProjectHealthStatus;
 use App\Models\ProjectMilestone;
 use App\Models\Task;
+use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -80,6 +82,110 @@ new #[Title('Dashboard')] class extends Component {
             ->orderBy('current_end')
             ->limit(6)
             ->get();
+    }
+
+    #[Computed]
+    public function canSeeTickets(): bool
+    {
+        return Auth::user()->can('viewAny', Ticket::class);
+    }
+
+    /**
+     * Visible tickets the user requested, created or is assigned to.
+     *
+     * @return Builder<Ticket>
+     */
+    private function myTicketBase(): Builder
+    {
+        $user = Auth::user();
+
+        return app(TicketQueue::class)->base($user)->where(fn (Builder $query) => $query
+            ->where('tickets.requester_user_id', $user->id)
+            ->orWhere('tickets.created_by', $user->id)
+            ->orWhereHas('activeAssignments', fn (Builder $assignments) => $assignments->where('user_id', $user->id)));
+    }
+
+    /**
+     * The user's own ticket counters (one aggregate query).
+     *
+     * @return list<array{label: string, value: int, icon: string, url: string, tone?: string}>
+     */
+    #[Computed]
+    public function ticketCards(): array
+    {
+        if (! $this->canSeeTickets) {
+            return [];
+        }
+
+        $counts = app(TicketQueue::class)->counts($this->myTicketBase(), ['open', 'waiting_for_me', 'due_today', 'overdue'], Auth::user());
+
+        return [
+            ['label' => 'My Open Tickets', 'value' => $counts['open'], 'icon' => 'ticket', 'url' => route('tickets.mine', ['view' => 'requested'])],
+            ['label' => 'Waiting for My Response', 'value' => $counts['waiting_for_me'], 'icon' => 'chat-bubble-left-ellipsis', 'url' => route('tickets.mine', ['view' => 'waiting_for_me']), 'tone' => 'amber'],
+            ['label' => 'Tickets Due Today', 'value' => $counts['due_today'], 'icon' => 'calendar', 'url' => route('tickets.mine'), 'tone' => 'amber'],
+            ['label' => 'Overdue Tickets', 'value' => $counts['overdue'], 'icon' => 'clock', 'url' => route('tickets.index', ['view' => 'overdue']), 'tone' => 'red'],
+        ];
+    }
+
+    /**
+     * @return Collection<int, Ticket>
+     */
+    #[Computed]
+    public function myTickets(): Collection
+    {
+        if (! $this->canSeeTickets) {
+            return collect();
+        }
+
+        $query = $this->myTicketBase()->select('tickets.*')->with(['status', 'priority', 'currentDepartment:id,name']);
+        app(TicketQueue::class)->apply($query, 'open', Auth::user());
+        app(TicketQueue::class)->orderActionable($query, Auth::user());
+
+        return $query->limit(6)->get();
+    }
+
+    /**
+     * Inbox counters for the departments the user leads.
+     *
+     * @return array{departments: Collection<int, Department>, counts: array<string, int>}|null
+     */
+    #[Computed]
+    public function leaderInbox(): ?array
+    {
+        if (! $this->canSeeTickets) {
+            return null;
+        }
+
+        $departments = Department::query()
+            ->whereIn('id', Auth::user()->activeMemberships()->where('is_leader', true)->select('department_id'))
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        if ($departments->isEmpty()) {
+            return null;
+        }
+
+        $base = app(TicketQueue::class)->base(Auth::user())->whereIn('tickets.current_department_id', $departments->pluck('id'));
+
+        return [
+            'departments' => $departments,
+            'counts' => app(TicketQueue::class)->counts($base, ['new', 'unassigned', 'in_progress', 'waiting', 'review', 'overdue'], Auth::user()),
+        ];
+    }
+
+    /**
+     * Company-wide ticket counters for ticket.view-all holders.
+     *
+     * @return array<string, int>|null
+     */
+    #[Computed]
+    public function ticketOverview(): ?array
+    {
+        if (! Auth::user()->can('ticket.view-all')) {
+            return null;
+        }
+
+        return app(TicketQueue::class)->counts(app(TicketQueue::class)->base(Auth::user()), ['open', 'critical', 'unassigned', 'overdue', 'review'], Auth::user());
     }
 
     #[Computed]
@@ -248,6 +354,21 @@ new #[Title('Dashboard')] class extends Component {
         </div>
     @endif
 
+    @if ($this->ticketCards !== [])
+        <div class="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            @foreach ($this->ticketCards as $card)
+                <a href="{{ $card['url'] }}" wire:navigate wire:key="ticket-card-{{ $loop->index }}"
+                   class="group rounded-xl border border-zinc-200 bg-white p-5 transition hover:border-zinc-300">
+                    <div class="flex items-center justify-between">
+                        <flux:text>{{ $card['label'] }}</flux:text>
+                        <flux:icon :icon="$card['icon']" @class(['size-5', 'text-zinc-400' => ! isset($card['tone']) || $card['value'] === 0, 'text-amber-500' => ($card['tone'] ?? null) === 'amber' && $card['value'] > 0, 'text-red-500' => ($card['tone'] ?? null) === 'red' && $card['value'] > 0]) />
+                    </div>
+                    <div @class(['mt-3 text-3xl font-semibold tracking-tight', 'text-red-600' => ($card['tone'] ?? null) === 'red' && $card['value'] > 0, 'text-zinc-900' => ($card['tone'] ?? null) !== 'red' || $card['value'] === 0])>{{ number_format($card['value']) }}</div>
+                </a>
+            @endforeach
+        </div>
+    @endif
+
     @if ($this->summary !== [])
         <div class="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             @foreach ($this->summary as $card)
@@ -286,6 +407,31 @@ new #[Title('Dashboard')] class extends Component {
                         </a>
                     @empty
                         <x-ui.empty-state icon="check-circle" title="Tidak ada task terbuka" description="Task yang Anda pegang sebagai PIC atau kolaborator akan muncul di sini." class="py-10" />
+                    @endforelse
+                </flux:card>
+            @endif
+
+            @if ($this->canSeeTickets)
+                <flux:card class="p-0!">
+                    <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+                        <flux:heading size="lg">My Tickets</flux:heading>
+                        <flux:link :href="route('tickets.mine')" wire:navigate class="text-sm">Lihat semua</flux:link>
+                    </div>
+                    @forelse ($this->myTickets as $ticket)
+                        <a href="{{ route('tickets.show', $ticket) }}" wire:navigate wire:key="mtk-{{ $ticket->id }}" class="grid grid-cols-[1fr_auto] items-center gap-4 border-b border-zinc-100 px-5 py-3 last:border-b-0 hover:bg-zinc-50 sm:grid-cols-[1fr_8rem_8rem]">
+                            <div class="min-w-0">
+                                <div class="truncate text-sm font-medium text-zinc-900">{{ $ticket->title }}</div>
+                                <div class="truncate text-xs text-zinc-500">{{ $ticket->number }} · {{ $ticket->currentDepartment->name }}</div>
+                            </div>
+                            <x-ui.master-badge :master="$ticket->status" class="max-sm:hidden" />
+                            @if ($ticket->current_due_at)
+                                <x-ui.deadline :date="$ticket->current_due_at" class="text-end" />
+                            @else
+                                <span class="text-end text-xs text-zinc-400">No deadline</span>
+                            @endif
+                        </a>
+                    @empty
+                        <x-ui.empty-state icon="ticket" title="Tidak ada ticket aktif" description="Ticket yang Anda ajukan atau tangani akan muncul di sini." class="py-10" />
                     @endforelse
                 </flux:card>
             @endif
@@ -362,6 +508,41 @@ new #[Title('Dashboard')] class extends Component {
         </div>
 
         <div class="space-y-6">
+            @if ($this->leaderInbox)
+                <flux:card class="p-0!">
+                    <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+                        <div class="min-w-0">
+                            <flux:heading size="lg">Department Inbox</flux:heading>
+                            <flux:text size="sm" class="truncate">{{ $this->leaderInbox['departments']->pluck('name')->join(', ') }}</flux:text>
+                        </div>
+                        <flux:link :href="route('tickets.inbox')" wire:navigate class="shrink-0 text-sm">Buka</flux:link>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3 p-5">
+                        @foreach (['new' => 'New', 'unassigned' => 'Unassigned', 'in_progress' => 'In Progress', 'waiting' => 'Waiting Information', 'review' => 'In Review', 'overdue' => 'Overdue'] as $queue => $label)
+                            <a href="{{ route('tickets.inbox', ['view' => $queue]) }}" wire:navigate wire:key="li-{{ $queue }}" class="rounded-lg bg-zinc-50 px-3 py-2 hover:bg-zinc-100">
+                                <div @class(['text-lg font-semibold tabular-nums', 'text-red-600' => $queue === 'overdue' && $this->leaderInbox['counts'][$queue] > 0, 'text-zinc-900' => $queue !== 'overdue' || $this->leaderInbox['counts'][$queue] === 0])>{{ $this->leaderInbox['counts'][$queue] }}</div>
+                                <div class="text-xs text-zinc-500">{{ $label }}</div>
+                            </a>
+                        @endforeach
+                    </div>
+                </flux:card>
+            @endif
+
+            @if ($this->ticketOverview)
+                <flux:card class="p-0!">
+                    <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
+                        <flux:heading size="lg">Ticket Overview</flux:heading>
+                        <flux:link :href="route('tickets.index')" wire:navigate class="text-sm">Tickets</flux:link>
+                    </div>
+                    @foreach (['open' => 'Open Tickets', 'critical' => 'Critical Tickets', 'unassigned' => 'Unassigned Tickets', 'overdue' => 'Overdue Tickets', 'review' => 'Tickets In Review'] as $queue => $label)
+                        <a href="{{ route('tickets.index', ['view' => $queue === 'critical' ? 'open' : $queue]) }}" wire:navigate wire:key="to-{{ $queue }}" class="flex items-center justify-between border-b border-zinc-100 px-5 py-2.5 text-sm last:border-b-0 hover:bg-zinc-50">
+                            <span class="text-zinc-700">{{ $label }}</span>
+                            <span @class(['font-semibold tabular-nums', 'text-red-600' => in_array($queue, ['critical', 'overdue'], true) && $this->ticketOverview[$queue] > 0, 'text-zinc-900' => ! in_array($queue, ['critical', 'overdue'], true) || $this->ticketOverview[$queue] === 0])>{{ $this->ticketOverview[$queue] }}</span>
+                        </a>
+                    @endforeach
+                </flux:card>
+            @endif
+
             @if ($this->managedMilestones->isNotEmpty())
                 <flux:card class="p-0!">
                     <div class="border-b border-zinc-200 px-5 py-4">
@@ -406,7 +587,7 @@ new #[Title('Dashboard')] class extends Component {
 
             <div class="rounded-xl border border-dashed border-zinc-300 p-5">
                 <flux:heading>Coming soon</flux:heading>
-                <flux:text class="mt-1">Tickets dan Department Inbox (Phase 4) akan muncul di dashboard ini.</flux:text>
+                <flux:text class="mt-1">Workflow dan Approval (Phase 5) akan muncul di dashboard ini.</flux:text>
             </div>
         </div>
     </div>

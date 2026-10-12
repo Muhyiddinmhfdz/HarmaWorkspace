@@ -1,6 +1,6 @@
 # HarmaWorkspace Project Guidelines
 
-HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular monolith: Laravel 13, MySQL, Livewire 4, Flux UI free, Fortify, Spatie Permission + Activitylog). The architecture blueprint is `docs/phase-0-blueprint.md`; the implemented foundation, conventions and ADRs are in `docs/phase-1-foundation.md`, `docs/phase-2-project-management.md` and `docs/phase-3-task-management.md`. Read them before building a module.
+HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular monolith: Laravel 13, MySQL, Livewire 4, Flux UI free, Fortify, Spatie Permission + Activitylog). The architecture blueprint is `docs/phase-0-blueprint.md`; the implemented foundation, conventions and ADRs are in `docs/phase-1-foundation.md`, `docs/phase-2-project-management.md`, `docs/phase-3-task-management.md` and `docs/phase-4-ticketing.md`. Read them before building a module.
 
 ## Phase discipline
 - Work only on the current phase in `docs/phase-0-blueprint.md` §21. Do not build Project/Task/Ticket/Workflow/Approval/Gantt features ahead of their phase.
@@ -43,6 +43,9 @@ HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular
 - Task visibility has one source: `Task::scopeVisibleTo()` / `isVisibleTo()` (project tasks follow project visibility). Assigning a task never adds project members implicitly; validate through `TaskGuard`.
 - Task effective weight is defined once in `App\Domain\Task\Support\TaskWeight`; project task-weighted progress is computed only by `ProjectProgressCalculator`.
 - Tasks of archived/terminal projects are read-only: Actions throw, and the UI must check project state explicitly because the Super Admin bypass skips policies.
+- Ticket status changes only through `App\Domain\Ticket\Actions\ChangeTicketStatus` (named operations validated by `TicketLifecycle`); acceptance, assignment, transfer, deadline, priority and project/task links have their own actions. Never write `status_id`, `current_department_id`, `accepted_*`, `resolved_*` or `closed_*` elsewhere.
+- Ticket visibility has one source: `Ticket::scopeVisibleTo()` / `isVisibleTo()`, independent from project visibility. When showing a related project/task, check that model's own visibility and mask it otherwise. Ticket queues and counters (New, Unassigned, Waiting, Review, Overdue, ...) come only from `App\Domain\Ticket\Support\TicketQueue` (status flags, never names).
+- Ticket PIC and collaborators must be active members of the ticket's current department; there are no global reviewer/department roles. Comments (conversation) are separate from activity; attachments are private, validated with `AttachmentRules` and downloaded only through the authorized route.
 - Important changes are recorded through `App\Domain\Audit\AuditLogger` with a semantic event code (`user.deactivated`, `role.updated`, ...). Never log passwords, tokens, or 2FA secrets.
 
 ## Database

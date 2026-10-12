@@ -4,8 +4,10 @@ namespace App\Providers;
 
 use App\Domain\System\Settings\Settings;
 use App\Listeners\RecordLastLogin;
+use App\Models\Attachment;
 use App\Models\ChecklistItem;
 use App\Models\Client;
+use App\Models\Comment;
 use App\Models\Department;
 use App\Models\DepartmentMembership;
 use App\Models\Position;
@@ -24,6 +26,18 @@ use App\Models\TaskAssignment;
 use App\Models\TaskCategory;
 use App\Models\TaskSubtask;
 use App\Models\TaskType;
+use App\Models\Ticket;
+use App\Models\TicketAssignment;
+use App\Models\TicketCategory;
+use App\Models\TicketRejectionReason;
+use App\Models\TicketRelation;
+use App\Models\TicketRelationType;
+use App\Models\TicketResolution;
+use App\Models\TicketSource;
+use App\Models\TicketSubcategory;
+use App\Models\TicketTransfer;
+use App\Models\TicketTransferReason;
+use App\Models\TicketType;
 use App\Models\User;
 use App\Policies\RolePolicy;
 use Carbon\CarbonImmutable;
@@ -106,6 +120,20 @@ class AppServiceProvider extends ServiceProvider
             'task_assignment' => TaskAssignment::class,
             'task_subtask' => TaskSubtask::class,
             'checklist_item' => ChecklistItem::class,
+            'ticket' => Ticket::class,
+            'ticket_type' => TicketType::class,
+            'ticket_category' => TicketCategory::class,
+            'ticket_subcategory' => TicketSubcategory::class,
+            'ticket_source' => TicketSource::class,
+            'ticket_resolution' => TicketResolution::class,
+            'ticket_transfer_reason' => TicketTransferReason::class,
+            'ticket_rejection_reason' => TicketRejectionReason::class,
+            'ticket_relation_type' => TicketRelationType::class,
+            'ticket_assignment' => TicketAssignment::class,
+            'ticket_transfer' => TicketTransfer::class,
+            'ticket_relation' => TicketRelation::class,
+            'comment' => Comment::class,
+            'attachment' => Attachment::class,
             'role' => Role::class,
             'permission' => Permission::class,
         ]);
@@ -122,6 +150,8 @@ class AppServiceProvider extends ServiceProvider
         Route::model('role', Role::class);
         Route::model('project', Project::class);
         Route::model('task', Task::class);
+        Route::model('ticket', Ticket::class);
+        Route::model('attachment', Attachment::class);
     }
 
     protected function configureAuthorization(): void

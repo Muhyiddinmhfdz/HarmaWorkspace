@@ -32,7 +32,7 @@ use Livewire\Component;
 new class extends Component {
     use WithFeedback;
 
-    public const array TABS = ['overview' => 'Overview', 'tasks' => 'Tasks', 'milestones' => 'Milestones', 'team' => 'Team', 'activity' => 'Activity'];
+    public const array TABS = ['overview' => 'Overview', 'tasks' => 'Tasks', 'tickets' => 'Tickets', 'milestones' => 'Milestones', 'team' => 'Team', 'activity' => 'Activity'];
 
     #[Locked]
     public int $projectId;
@@ -73,7 +73,7 @@ new class extends Component {
     #[On('project-updated')]
     public function refreshProject(): void
     {
-        unset($this->project, $this->can, $this->transitions, $this->upcomingMilestones, $this->recentActivity, $this->lastScheduleChange, $this->taskSummary, $this->departmentProgress, $this->upcomingTasks, $this->canCompleteNow);
+        unset($this->project, $this->can, $this->transitions, $this->upcomingMilestones, $this->recentActivity, $this->lastScheduleChange, $this->taskSummary, $this->departmentProgress, $this->upcomingTasks, $this->canCompleteNow, $this->ticketSummary);
     }
 
     #[Computed]
@@ -167,6 +167,25 @@ new class extends Component {
             'overdue' => (int) ($row->overdue ?? 0),
             'counted' => (int) ($row->counted ?? 0),
         ];
+    }
+
+    /**
+     * Compact ticket counters for the overview, limited to tickets the user
+     * may see (ticket visibility is independent from project visibility).
+     *
+     * @return array<string, int>
+     */
+    #[Computed]
+    public function ticketSummary(): array
+    {
+        $queue = app(\App\Domain\Ticket\Support\TicketQueue::class);
+        $user = auth()->user();
+
+        if (! $user->can('viewAny', \App\Models\Ticket::class)) {
+            return [];
+        }
+
+        return $queue->counts($queue->base($user)->where('tickets.project_id', $this->projectId), ['all', 'open', 'in_progress', 'waiting', 'resolved'], $user);
     }
 
     /**
@@ -684,6 +703,23 @@ new class extends Component {
                     </flux:card>
                 @endif
 
+                @if (($this->ticketSummary['all'] ?? 0) > 0)
+                    <flux:card>
+                        <div class="flex items-center justify-between">
+                            <flux:heading size="lg">Tickets</flux:heading>
+                            <flux:button size="sm" variant="ghost" wire:click="$set('tab', 'tickets')">All tickets</flux:button>
+                        </div>
+                        <div class="mt-3 grid grid-cols-2 gap-3">
+                            @foreach (['open' => 'Open', 'in_progress' => 'In Progress', 'waiting' => 'Waiting', 'resolved' => 'Resolved'] as $view => $label)
+                                <a href="{{ route('projects.show', ['project' => $project, 'tab' => 'tickets', 'view' => $view]) }}" wire:navigate wire:key="tks-{{ $view }}" class="rounded-lg bg-zinc-50 px-3 py-2 hover:bg-zinc-100">
+                                    <div class="text-lg font-semibold tabular-nums text-zinc-900">{{ $this->ticketSummary[$view] }}</div>
+                                    <div class="text-xs text-zinc-500">{{ $label }}</div>
+                                </a>
+                            @endforeach
+                        </div>
+                    </flux:card>
+                @endif
+
                 <flux:card class="p-0!">
                     <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-4">
                         <flux:heading size="lg">Departments</flux:heading>
@@ -718,6 +754,8 @@ new class extends Component {
         </div>
     @elseif ($tab === 'tasks')
         <livewire:tasks.table mode="project" :project-id="$project->id" wire:key="tasks-{{ $project->id }}" />
+    @elseif ($tab === 'tickets')
+        <livewire:tickets.table mode="project" :project-id="$project->id" wire:key="tickets-{{ $project->id }}" />
     @elseif ($tab === 'milestones')
         <livewire:projects.milestones :project-id="$project->id" wire:key="milestones-{{ $project->id }}" />
     @elseif ($tab === 'team')

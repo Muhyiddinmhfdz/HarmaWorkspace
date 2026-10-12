@@ -28,11 +28,12 @@ use Illuminate\Support\Carbon;
  * @property bool $counts_as_completed
  * @property bool $counts_as_started
  * @property bool $is_blocked
+ * @property bool $awaits_review
  * @property bool $is_active
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['scope', 'code', 'name', 'description', 'color', 'icon', 'sort_order', 'is_initial', 'is_terminal', 'counts_as_completed', 'counts_as_started', 'is_blocked'])]
+#[Fillable(['scope', 'code', 'name', 'description', 'color', 'icon', 'sort_order', 'is_initial', 'is_terminal', 'counts_as_completed', 'counts_as_started', 'is_blocked', 'awaits_review'])]
 class Status extends Model
 {
     use HasActiveStatus, HasMasterCode;
@@ -50,6 +51,7 @@ class Status extends Model
             'counts_as_completed' => 'boolean',
             'counts_as_started' => 'boolean',
             'is_blocked' => 'boolean',
+            'awaits_review' => 'boolean',
             'is_active' => 'boolean',
         ];
     }
@@ -68,7 +70,7 @@ class Status extends Model
         return match ($this->scope) {
             MasterScope::Project => Project::query()->where('status_id', $this->id)->exists(),
             MasterScope::Task => Task::query()->where('status_id', $this->id)->exists(),
-            default => false,
+            MasterScope::Ticket => Ticket::query()->where('status_id', $this->id)->orWhere('resume_status_id', $this->id)->exists(),
         };
     }
 }

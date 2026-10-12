@@ -37,7 +37,12 @@ new class extends Component {
                 ->orWhere(fn ($query) => $query
                     ->where('subject_type', 'task')
                     ->whereIn('event', \App\Domain\Task\Support\TaskAudit::PROJECT_EVENTS)
-                    ->where('properties->project_id', $this->projectId)))
+                    ->where('properties->project_id', $this->projectId))
+                ->orWhere(fn ($query) => $query
+                    ->where('subject_type', 'ticket')
+                    ->whereIn('event', \App\Domain\Ticket\Support\TicketAudit::PROJECT_EVENTS)
+                    ->where('properties->project_id', $this->projectId)
+                    ->whereIn('subject_id', \App\Models\Ticket::query()->visibleTo(auth()->user())->select('tickets.id'))))
             ->with('causer:id,name')
             ->latest('id')
             ->limit($this->limit + 1)
@@ -85,7 +90,7 @@ new class extends Component {
             </ol>
         </section>
     @empty
-        <x-ui.empty-state icon="clock" title="Belum ada aktivitas" description="Perubahan project, tim, jadwal, dan milestone akan tercatat di sini." />
+        <x-ui.empty-state icon="clock" title="Belum ada aktivitas" description="Perubahan project, tim, jadwal, milestone, serta task dan ticket penting akan tercatat di sini." />
     @endforelse
 
     @if ($this->entries->count() > $limit)

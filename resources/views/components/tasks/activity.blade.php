@@ -37,8 +37,13 @@ new class extends Component {
     {
         return Activity::query()
             ->inLog(AuditLogger::LOG_NAME)
-            ->where('subject_type', 'task')
-            ->where('subject_id', $this->taskId)
+            ->where(fn ($query) => $query
+                ->where(fn ($query) => $query->where('subject_type', 'task')->where('subject_id', $this->taskId))
+                ->orWhere(fn ($query) => $query
+                    ->where('subject_type', 'ticket')
+                    ->whereIn('event', \App\Domain\Ticket\Support\TicketAudit::TASK_EVENTS)
+                    ->where('properties->task_id', $this->taskId)
+                    ->whereIn('subject_id', \App\Models\Ticket::query()->visibleTo(auth()->user())->select('tickets.id'))))
             ->with('causer:id,name')
             ->latest('id')
             ->limit($this->limit + 1)

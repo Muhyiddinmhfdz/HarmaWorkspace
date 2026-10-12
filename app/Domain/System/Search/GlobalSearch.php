@@ -6,13 +6,14 @@ use App\Models\Client;
 use App\Models\Department;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Global search across the modules available so far. Each source is only
  * searched when the user may view it, and uses the same visibility rules as
- * the module's list page. Tickets join in Phase 4.
+ * the module's list page, so hidden records never appear in results.
  */
 class GlobalSearch
 {
@@ -64,6 +65,28 @@ class GlobalSearch
                         'title' => $found->title,
                         'subtitle' => $found->number,
                         'url' => route('tasks.show', $found),
+                    ])
+                    ->all()),
+            ];
+        }
+
+        if ($user->can('viewAny', Ticket::class)) {
+            $results[] = [
+                'group' => 'Tickets',
+                'items' => array_values(Ticket::query()
+                    ->visibleTo($user)
+                    ->where(fn (Builder $query) => $query
+                        ->where('number', 'like', $like)
+                        ->orWhere('title', 'like', $like)
+                        ->orWhereHas('client', fn (Builder $client) => $client->where('name', 'like', $like)))
+                    ->with(['status:id,name', 'currentDepartment:id,name'])
+                    ->orderByDesc('id')
+                    ->limit(self::LIMIT_PER_GROUP)
+                    ->get(['id', 'number', 'title', 'status_id', 'current_department_id'])
+                    ->map(fn (Ticket $found): array => [
+                        'title' => $found->title,
+                        'subtitle' => $found->number.' · '.$found->currentDepartment->name.' • '.$found->status->name,
+                        'url' => route('tickets.show', $found),
                     ])
                     ->all()),
             ];

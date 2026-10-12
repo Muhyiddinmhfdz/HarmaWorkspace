@@ -63,6 +63,32 @@ class PermissionRegistry
     ];
 
     /**
+     * Permissions introduced in Phase 4 (granted once by a data migration).
+     * Department leaders get inbox abilities contextually, not by role.
+     *
+     * @var array<string, list<string>>
+     */
+    public const array PHASE_4_DEFAULTS = [
+        'Management' => [
+            'ticket.view',
+            'ticket.view-all',
+            'ticket.create',
+            'ticket.update',
+            'ticket.manage-inbox',
+            'ticket.assign',
+            'ticket.transfer',
+            'ticket.manage-deadline',
+            'ticket.review',
+            'ticket.close',
+            'ticket.cancel',
+        ],
+        'Staff' => [
+            'ticket.view',
+            'ticket.create',
+        ],
+    ];
+
+    /**
      * Permissions grouped by module, with an Indonesian description.
      *
      * @return array<string, array{label: string, permissions: array<string, string>}>
@@ -120,7 +146,7 @@ class PermissionRegistry
                 'label' => 'Master Data',
                 'permissions' => [
                     'master-data.view' => 'Membuka Master Data Center',
-                    'master-data.manage' => 'Mengelola master Project (category, status, priority, role, health)',
+                    'master-data.manage' => 'Mengelola master Project, Task, dan Ticket',
                 ],
             ],
             'project' => [
@@ -152,6 +178,22 @@ class PermissionRegistry
                     'task.manage-progress' => 'Mengubah progress dan status kerja task',
                     'task.complete' => 'Menyelesaikan task (Done)',
                     'task.cancel' => 'Membatalkan task',
+                ],
+            ],
+            'ticket' => [
+                'label' => 'Tickets',
+                'permissions' => [
+                    'ticket.view' => 'Melihat ticket yang relevan (requester, PIC, kolaborator, department saat ini)',
+                    'ticket.view-all' => 'Melihat seluruh ticket',
+                    'ticket.create' => 'Membuat ticket ke department tujuan',
+                    'ticket.update' => 'Mengubah informasi ticket',
+                    'ticket.manage-inbox' => 'Menerima, menolak, dan mengubah priority ticket di semua Department Inbox',
+                    'ticket.assign' => 'Menetapkan PIC dan kolaborator ticket',
+                    'ticket.transfer' => 'Memindahkan ticket ke department lain',
+                    'ticket.manage-deadline' => 'Mengubah deadline ticket',
+                    'ticket.review' => 'Me-review hasil (resolve atau minta revisi)',
+                    'ticket.close' => 'Menutup dan membuka kembali ticket',
+                    'ticket.cancel' => 'Membatalkan ticket',
                 ],
             ],
             'role' => [
@@ -237,6 +279,7 @@ class PermissionRegistry
                 'settings.view',
                 ...self::PHASE_2_DEFAULTS['Management'],
                 ...self::PHASE_3_DEFAULTS['Management'],
+                ...self::PHASE_4_DEFAULTS['Management'],
             ],
             'Staff' => [
                 'dashboard.view',
@@ -244,6 +287,7 @@ class PermissionRegistry
                 'client.view',
                 ...self::PHASE_2_DEFAULTS['Staff'],
                 ...self::PHASE_3_DEFAULTS['Staff'],
+                ...self::PHASE_4_DEFAULTS['Staff'],
             ],
         ];
     }

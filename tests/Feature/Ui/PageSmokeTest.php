@@ -2,12 +2,14 @@
 
 namespace Tests\Feature\Ui;
 
+use App\Models\Attachment;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\DepartmentMembership;
 use App\Models\Position;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -15,7 +17,7 @@ use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
- * Every Phase 1 page renders for a Super Admin with realistic data.
+ * Every page renders for a Super Admin with realistic data.
  */
 class PageSmokeTest extends TestCase
 {
@@ -65,6 +67,17 @@ class PageSmokeTest extends TestCase
             'task edit' => ['tasks.edit'],
             'master task statuses' => ['master-data.manage', 'task-statuses'],
             'master task types' => ['master-data.manage', 'task-types'],
+            'project tickets tab' => ['projects.show', 'tickets'],
+            'tickets' => ['tickets.index'],
+            'my tickets' => ['tickets.mine'],
+            'department inbox' => ['tickets.inbox'],
+            'ticket create' => ['tickets.create'],
+            'ticket show' => ['tickets.show'],
+            'ticket edit' => ['tickets.edit'],
+            'master ticket statuses' => ['master-data.manage', 'ticket-statuses'],
+            'master ticket subcategories' => ['master-data.manage', 'ticket-subcategories'],
+            'master ticket resolutions' => ['master-data.manage', 'ticket-resolutions'],
+            'master ticket relation types' => ['master-data.manage', 'ticket-relation-types'],
         ];
     }
 
@@ -85,6 +98,17 @@ class PageSmokeTest extends TestCase
         $project->milestones()->forceCreate(['name' => 'Go Live', 'planned_date' => today()->addWeek(), 'current_due_date' => today()->addWeek()]);
         $task = Task::factory()->create(['project_id' => $project->id, 'department_id' => $project->leadDepartment()->value('department_id'), 'current_end' => today()->addDays(3)]);
 
+        $ticket = Ticket::factory()->create([
+            'project_id' => $project->id,
+            'task_id' => $task->id,
+            'client_id' => $client->id,
+            'current_department_id' => $department->id,
+            'current_due_at' => now()->addDays(2)->endOfDay(),
+        ]);
+        $ticket->comments()->create(['user_id' => $member->id, 'body' => "Mohon dicek.\nTerima kasih."]);
+        $attachment = new Attachment;
+        $attachment->forceFill(['attachable_type' => 'ticket', 'attachable_id' => $ticket->id, 'uploaded_by' => $member->id, 'disk' => 'local', 'path' => 'attachments/x.png', 'original_name' => 'screenshot.png', 'mime_type' => 'image/png', 'size' => 2048])->save();
+
         $parameters = match ($routeName) {
             'admin.users.show', 'admin.users.edit' => ['user' => $member],
             'admin.departments.show' => ['department' => $department],
@@ -94,6 +118,7 @@ class PageSmokeTest extends TestCase
             'projects.edit' => ['project' => $project],
             'master-data.manage' => ['type' => $variant],
             'tasks.show', 'tasks.edit' => ['task' => $task],
+            'tickets.show', 'tickets.edit' => ['ticket' => $ticket],
             default => [],
         };
 

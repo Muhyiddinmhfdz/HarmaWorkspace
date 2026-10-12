@@ -102,6 +102,50 @@ new class extends Component {
         return method_exists($record, 'isCodeLocked') && $record->isCodeLocked();
     }
 
+    /**
+     * Options for relation fields (e.g. parent category): active records plus
+     * the value currently stored on the edited record.
+     *
+     * @return array<string, array<int, string>>
+     */
+    #[Computed]
+    public function relationOptions(): array
+    {
+        $options = [];
+
+        foreach ($this->definition()->relationFields() as $field) {
+            $current = (int) ($this->form[$field['name']] ?? 0);
+            $model = $field['model'] ?? null;
+
+            $options[$field['name']] = $model === null ? [] : $model::query()
+                ->where(fn (Builder $query) => $query->where('is_active', true)->orWhere('id', $current))
+                ->orderBy('sort_order')
+                ->orderBy('name')
+                ->pluck('name', 'id')
+                ->all();
+        }
+
+        return $options;
+    }
+
+    /**
+     * Display names for relation columns (masters are small lists).
+     *
+     * @return array<string, array<int, string>>
+     */
+    #[Computed]
+    public function relationNames(): array
+    {
+        $names = [];
+
+        foreach ($this->definition()->relationFields() as $field) {
+            $model = $field['model'] ?? null;
+            $names[$field['name']] = $model === null ? [] : $model::query()->pluck('name', 'id')->all();
+        }
+
+        return $names;
+    }
+
     #[Computed]
     public function statusTarget(): ?Model
     {
@@ -246,6 +290,9 @@ new class extends Component {
                 <flux:table.columns>
                     <flux:table.column sortable :sorted="$sortBy === 'code'" :direction="$sortDirection" wire:click="sort('code')">Code</flux:table.column>
                     <flux:table.column sortable :sorted="$sortBy === 'name'" :direction="$sortDirection" wire:click="sort('name')">Name</flux:table.column>
+                    @foreach ($definition->relationFields() as $field)
+                        <flux:table.column wire:key="rc-{{ $field['name'] }}">{{ $field['label'] }}</flux:table.column>
+                    @endforeach
                     @if ($definition->hasField('level'))
                         <flux:table.column sortable :sorted="$sortBy === 'level'" :direction="$sortDirection" wire:click="sort('level')" class="max-md:hidden">Level</flux:table.column>
                     @endif
@@ -271,6 +318,9 @@ new class extends Component {
                                     <div class="mt-0.5 max-w-sm truncate text-xs text-zinc-500">{{ $record->description }}</div>
                                 @endif
                             </flux:table.cell>
+                            @foreach ($definition->relationFields() as $field)
+                                <flux:table.cell wire:key="rv-{{ $record->getKey() }}-{{ $field['name'] }}">{{ $this->relationNames[$field['name']][$record->getAttribute($field['name'])] ?? '—' }}</flux:table.cell>
+                            @endforeach
                             @if ($definition->hasField('level'))
                                 <flux:table.cell class="max-md:hidden">{{ $record->level }}</flux:table.cell>
                             @endif
@@ -346,6 +396,13 @@ new class extends Component {
                                 @break
                             @case('boolean')
                                 <flux:switch wire:model="form.{{ $field['name'] }}" :label="$field['label']" :description="$field['help'] ?? null" />
+                                @break
+                            @case('relation')
+                                <flux:select wire:model="form.{{ $field['name'] }}" :label="$field['label']" badge="Required" :placeholder="'Pilih '.strtolower($field['label'])">
+                                    @foreach ($this->relationOptions[$field['name']] ?? [] as $optionId => $optionName)
+                                        <flux:select.option :value="$optionId" wire:key="ro-{{ $optionId }}">{{ $optionName }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
                                 @break
                             @case('number')
                                 <flux:input wire:model="form.{{ $field['name'] }}" type="number" min="0" :label="$field['label']" :description="$field['help'] ?? null" class="max-w-48" />

@@ -10,6 +10,14 @@ use App\Models\ProjectRole;
 use App\Models\Status;
 use App\Models\TaskCategory;
 use App\Models\TaskType;
+use App\Models\TicketCategory;
+use App\Models\TicketRejectionReason;
+use App\Models\TicketRelationType;
+use App\Models\TicketResolution;
+use App\Models\TicketSource;
+use App\Models\TicketSubcategory;
+use App\Models\TicketTransferReason;
+use App\Models\TicketType;
 
 /**
  * Masters managed through the generic page `/master-data/{type}`.
@@ -136,6 +144,122 @@ class MasterRegistry
                     ['name' => 'color', 'label' => 'Color', 'type' => 'color'],
                 ],
                 group: 'Task',
+            ),
+            new MasterDefinition(
+                key: 'ticket-types',
+                label: 'Ticket Types',
+                singular: 'Ticket Type',
+                description: 'Jenis request, misalnya Bug, Request, atau Incident.',
+                icon: 'ticket',
+                model: TicketType::class,
+                fields: [['name' => 'color', 'label' => 'Color', 'type' => 'color']],
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-categories',
+                label: 'Ticket Categories',
+                singular: 'Ticket Category',
+                description: 'Area permasalahan, misalnya Application, Account, atau Infrastructure.',
+                icon: 'rectangle-stack',
+                model: TicketCategory::class,
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-subcategories',
+                label: 'Ticket Subcategories',
+                singular: 'Ticket Subcategory',
+                description: 'Rincian kategori, misalnya Application → Login. Selalu terikat ke satu category.',
+                icon: 'list-bullet',
+                model: TicketSubcategory::class,
+                fields: [['name' => 'ticket_category_id', 'label' => 'Category', 'type' => 'relation', 'model' => TicketCategory::class]],
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-statuses',
+                label: 'Ticket Statuses',
+                singular: 'Ticket Status',
+                description: 'Tahapan ticket. Perilaku sistem mengikuti flag dan code, bukan nama.',
+                icon: 'flag',
+                model: Status::class,
+                scope: MasterScope::Ticket,
+                fields: [
+                    ['name' => 'color', 'label' => 'Color', 'type' => 'color'],
+                    ['name' => 'is_initial', 'label' => 'Initial status', 'type' => 'boolean', 'help' => 'Antrian awal Department Inbox (ticket baru & setelah transfer). Hanya satu status.'],
+                    ['name' => 'counts_as_started', 'label' => 'Work started', 'type' => 'boolean', 'help' => 'Mengisi waktu mulai saat pertama kali dipakai.'],
+                    ['name' => 'is_blocked', 'label' => 'Waiting', 'type' => 'boolean', 'help' => 'Menunggu pihak lain (misalnya informasi dari requester).'],
+                    ['name' => 'awaits_review', 'label' => 'Awaiting review', 'type' => 'boolean', 'help' => 'Menunggu keputusan resolve atau revisi.'],
+                    ['name' => 'counts_as_completed', 'label' => 'Resolved', 'type' => 'boolean', 'help' => 'Pekerjaan dinyatakan selesai; tidak lagi dihitung aktif.'],
+                    ['name' => 'is_terminal', 'label' => 'Final status', 'type' => 'boolean', 'help' => 'Ticket berakhir (closed, rejected, atau cancelled).'],
+                ],
+                exclusiveFlags: ['is_initial'],
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-priorities',
+                label: 'Ticket Priorities',
+                singular: 'Ticket Priority',
+                description: 'Tingkat urgensi ticket. Level lebih tinggi = lebih mendesak.',
+                icon: 'signal',
+                model: Priority::class,
+                scope: MasterScope::Ticket,
+                fields: [
+                    ['name' => 'level', 'label' => 'Level', 'type' => 'number', 'help' => 'Contoh: 10 Low, 20 Normal, 30 High, 40 Critical.'],
+                    ['name' => 'color', 'label' => 'Color', 'type' => 'color'],
+                ],
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-sources',
+                label: 'Ticket Sources',
+                singular: 'Ticket Source',
+                description: 'Asal laporan, misalnya WhatsApp atau Phone. Hanya dicatat, bukan integrasi.',
+                icon: 'inbox-arrow-down',
+                model: TicketSource::class,
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-resolutions',
+                label: 'Ticket Resolutions',
+                singular: 'Ticket Resolution',
+                description: 'Hasil penyelesaian ticket, misalnya Fixed atau Answered.',
+                icon: 'check-badge',
+                model: TicketResolution::class,
+                fields: [
+                    ['name' => 'color', 'label' => 'Color', 'type' => 'color'],
+                    ['name' => 'requires_related_ticket', 'label' => 'Requires primary ticket', 'type' => 'boolean', 'help' => 'Misalnya Duplicate: resolver wajib memilih ticket utama.'],
+                ],
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-transfer-reasons',
+                label: 'Transfer Reasons',
+                singular: 'Transfer Reason',
+                description: 'Alasan memindahkan ticket ke department lain.',
+                icon: 'arrows-right-left',
+                model: TicketTransferReason::class,
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-rejection-reasons',
+                label: 'Rejection Reasons',
+                singular: 'Rejection Reason',
+                description: 'Alasan department menolak ticket yang tidak valid.',
+                icon: 'hand-raised',
+                model: TicketRejectionReason::class,
+                group: 'Ticket',
+            ),
+            new MasterDefinition(
+                key: 'ticket-relation-types',
+                label: 'Ticket Relation Types',
+                singular: 'Ticket Relation Type',
+                description: 'Jenis hubungan antar ticket, misalnya Related To atau Duplicate Of.',
+                icon: 'link',
+                model: TicketRelationType::class,
+                fields: [
+                    ['name' => 'is_duplicate', 'label' => 'Duplicate relation', 'type' => 'boolean', 'help' => 'Dipakai otomatis saat ticket di-resolve sebagai duplikat. Hanya satu.'],
+                ],
+                exclusiveFlags: ['is_duplicate'],
+                group: 'Ticket',
             ),
         ];
 

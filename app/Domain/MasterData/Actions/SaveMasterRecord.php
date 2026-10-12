@@ -33,7 +33,7 @@ class SaveMasterRecord
             $value = $data[$field['name']] ?? null;
             $attributes[$field['name']] = match ($field['type']) {
                 'boolean' => (bool) $value,
-                'number' => (int) $value,
+                'number', 'relation' => (int) $value,
                 default => $value,
             };
         }

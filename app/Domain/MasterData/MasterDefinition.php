@@ -21,7 +21,7 @@ final readonly class MasterDefinition
 
     /**
      * @param  class-string<Model>  $model
-     * @param  list<array{name: string, label: string, type: 'text'|'textarea'|'number'|'color'|'boolean', help?: string}>  $fields
+     * @param  list<array{name: string, label: string, type: 'text'|'textarea'|'number'|'color'|'boolean'|'relation', help?: string, model?: class-string<Model>}>  $fields  A `relation` field stores the id of a record of `model` (e.g. the parent category).
      * @param  list<string>  $exclusiveFlags  Boolean fields only one record (per scope) may have.
      */
     public function __construct(
@@ -48,6 +48,14 @@ final readonly class MasterDefinition
     public function fieldNames(): array
     {
         return array_column($this->fields, 'name');
+    }
+
+    /**
+     * @return list<array{name: string, label: string, type: 'text'|'textarea'|'number'|'color'|'boolean'|'relation', help?: string, model?: class-string<Model>}>
+     */
+    public function relationFields(): array
+    {
+        return array_values(array_filter($this->fields, fn (array $field): bool => $field['type'] === 'relation'));
     }
 
     public function hasField(string $name): bool
@@ -107,6 +115,7 @@ final readonly class MasterDefinition
                 'color' => ['required', Rule::in(self::COLORS)],
                 'textarea' => ['nullable', 'string', 'max:1000'],
                 'text' => ['nullable', 'string', 'max:100'],
+                'relation' => ['required', 'integer', Rule::exists($field['model'] ?? '', 'id')],
             };
         }
 

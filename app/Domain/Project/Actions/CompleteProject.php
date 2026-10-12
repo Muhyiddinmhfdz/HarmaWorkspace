@@ -12,6 +12,7 @@ use App\Models\Project;
 use App\Models\ProjectHealthStatus;
 use App\Models\Status;
 use App\Models\Task;
+use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Date;
@@ -20,7 +21,8 @@ use Illuminate\Support\Facades\DB;
 /**
  * Complete a project: completion status, actual end date, 100% manual progress
  * and the completion health. Every task must be finished (completed or
- * cancelled) first (ADR-047).
+ * cancelled) first (ADR-047), and every related ticket resolved, closed,
+ * rejected or cancelled (ADR-059). Nothing is closed automatically.
  */
 class CompleteProject
 {
@@ -50,7 +52,7 @@ class CompleteProject
                 throw new BusinessRuleException($this->lifecycle->rejectionMessage($project->status, $status));
             }
 
-            $this->ensureNoActiveTasks($project);
+            $this->ensureNoActiveWork($project);
 
             $actualStart = $project->actual_start ?? $project->current_start;
 
@@ -84,25 +86,36 @@ class CompleteProject
     }
 
     /**
-     * Blocks completion while tasks are still open, with a per-status summary.
+     * Blocks completion while tasks or tickets are still active, with a
+     * per-status summary so the project manager knows what to follow up.
      */
-    private function ensureNoActiveTasks(Project $project): void
+    private function ensureNoActiveWork(Project $project): void
     {
-        $open = Task::query()
-            ->where('project_id', $project->id)
-            ->open()
-            ->join('statuses', 'statuses.id', '=', 'tasks.status_id')
+        $summary = fn ($query, string $table) => $query
+            ->where($table.'.project_id', $project->id)
+            ->join('statuses', 'statuses.id', '=', $table.'.status_id')
             ->selectRaw('statuses.name, COUNT(*) as aggregate')
             ->groupBy('statuses.id', 'statuses.name', 'statuses.sort_order')
             ->orderBy('statuses.sort_order')
             ->pluck('aggregate', 'name');
 
-        if ($open->isEmpty()) {
+        $tasks = $summary(Task::query()->open(), 'tasks');
+        $tickets = $summary(Ticket::query()->open(), 'tickets');
+
+        if ($tasks->isEmpty() && $tickets->isEmpty()) {
             return;
         }
 
-        $details = $open->map(fn ($count, string $name): string => $count.' Task masih '.$name)->implode(', ');
+        $parts = [];
 
-        throw new BusinessRuleException('Project belum dapat diselesaikan karena masih terdapat '.$open->sum().' Task aktif: '.$details.'.');
+        if ($tasks->isNotEmpty()) {
+            $parts[] = $tasks->sum().' Task aktif: '.$tasks->map(fn ($count, string $name): string => $count.' Task masih '.$name)->implode(', ');
+        }
+
+        if ($tickets->isNotEmpty()) {
+            $parts[] = $tickets->sum().' Ticket aktif: '.$tickets->map(fn ($count, string $name): string => $count.' Ticket masih '.$name)->implode(', ');
+        }
+
+        throw new BusinessRuleException('Project belum dapat diselesaikan karena masih terdapat '.implode('; serta ', $parts).'.');
     }
 }

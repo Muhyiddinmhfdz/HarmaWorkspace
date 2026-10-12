@@ -367,7 +367,7 @@ new class extends Component {
 
     <div class="grid gap-6 lg:grid-cols-3">
         {{-- Main --}}
-        <div class="space-y-6 lg:col-span-2">
+        <div class="min-w-0 space-y-6 lg:col-span-2">
             <flux:card>
                 <flux:heading size="lg">Description</flux:heading>
                 <flux:text class="mt-2 whitespace-pre-line">{{ $task->description ?: 'Belum ada deskripsi.' }}</flux:text>
@@ -376,6 +376,8 @@ new class extends Component {
             <livewire:tasks.subtasks :task-id="$task->id" wire:key="subtasks-{{ $task->id }}" />
 
             <livewire:tasks.checklist owner-type="task" :owner-id="$task->id" wire:key="checklist-{{ $task->id }}" />
+
+            <livewire:tickets.related :task-id="$task->id" wire:key="related-tickets-{{ $task->id }}" />
 
             <livewire:tasks.activity :task-id="$task->id" wire:key="activity-{{ $task->id }}" />
         </div>

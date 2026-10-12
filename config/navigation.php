@@ -24,6 +24,7 @@ return [
         'heading' => 'My Work',
         'items' => [
             ['label' => 'My Tasks', 'icon' => 'check-circle', 'route' => 'tasks.mine', 'active' => 'tasks.mine', 'permission' => ['task.view', 'task.view-all']],
+            ['label' => 'My Tickets', 'icon' => 'ticket', 'route' => 'tickets.mine', 'active' => 'tickets.mine', 'permission' => ['ticket.view', 'ticket.view-all']],
         ],
     ],
     [
@@ -36,6 +37,8 @@ return [
         'heading' => 'Work',
         'items' => [
             ['label' => 'Tasks', 'icon' => 'queue-list', 'route' => 'tasks.index', 'active' => 'tasks.index|tasks.show|tasks.create|tasks.edit', 'permission' => ['task.view', 'task.view-all']],
+            ['label' => 'Tickets', 'icon' => 'lifebuoy', 'route' => 'tickets.index', 'active' => 'tickets.index|tickets.show|tickets.create|tickets.edit', 'permission' => ['ticket.view', 'ticket.view-all']],
+            ['label' => 'Department Inbox', 'icon' => 'inbox-stack', 'route' => 'tickets.inbox', 'active' => 'tickets.inbox', 'permission' => ['ticket.view', 'ticket.view-all']],
         ],
     ],
     [

@@ -1,10 +1,12 @@
 <?php
 
+use App\Http\Controllers\TicketAttachmentController;
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\Position;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\Ticket;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
@@ -122,6 +124,29 @@ Route::middleware('auth')->group(function () {
     Route::livewire('tasks/{task}/edit', 'pages::tasks.edit')
         ->middleware('can:update,task')
         ->name('tasks.edit');
+
+    // Tickets & Department Inbox
+    Route::livewire('my-tickets', 'pages::tickets.mine')
+        ->middleware('can:viewAny,'.Ticket::class)
+        ->name('tickets.mine');
+    Route::livewire('department-inbox', 'pages::tickets.inbox')
+        ->middleware('can:viewAny,'.Ticket::class)
+        ->name('tickets.inbox');
+    Route::livewire('tickets', 'pages::tickets.index')
+        ->middleware('can:viewAny,'.Ticket::class)
+        ->name('tickets.index');
+    Route::livewire('tickets/create', 'pages::tickets.create')
+        ->middleware('can:create,'.Ticket::class)
+        ->name('tickets.create');
+    Route::livewire('tickets/{ticket}', 'pages::tickets.show')
+        ->middleware('can:view,ticket')
+        ->name('tickets.show');
+    Route::livewire('tickets/{ticket}/edit', 'pages::tickets.edit')
+        ->middleware('can:update,ticket')
+        ->name('tickets.edit');
+    Route::get('tickets/{ticket}/attachments/{attachment}', TicketAttachmentController::class)
+        ->middleware('can:view,ticket')
+        ->name('tickets.attachments.download');
 
     Route::livewire('settings', 'pages::settings.index')
         ->middleware('can:settings.view')

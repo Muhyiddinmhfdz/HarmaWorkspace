@@ -77,18 +77,6 @@ new #[Title('Master Data')] class extends Component {
 
         return $groups;
     }
-
-    /**
-     * Masters planned for later phases. Shown for orientation only; nothing is clickable.
-     *
-     * @return list<array{heading: string, phase: string, items: list<string>}>
-     */
-    public function upcoming(): array
-    {
-        return [
-            ['heading' => 'Ticket', 'phase' => 'Phase 4', 'items' => ['Ticket Type', 'Ticket Category', 'Ticket Status', 'Ticket Priority', 'Resolution']],
-        ];
-    }
 }; ?>
 
 <div class="mx-auto w-full max-w-6xl">
@@ -123,18 +111,4 @@ new #[Title('Master Data')] class extends Component {
         </x-ui.table-card>
     @endforelse
 
-    <section>
-        <flux:heading size="sm" class="mb-3 uppercase tracking-wide text-zinc-500!">Coming soon</flux:heading>
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            @foreach ($this->upcoming() as $group)
-                <div wire:key="upcoming-{{ $group['heading'] }}" class="rounded-xl border border-dashed border-zinc-300 p-5 dark:border-zinc-700">
-                    <div class="flex items-center justify-between">
-                        <flux:heading>{{ $group['heading'] }}</flux:heading>
-                        <flux:badge size="sm" color="zinc">{{ $group['phase'] }}</flux:badge>
-                    </div>
-                    <flux:text class="mt-2">{{ implode(' · ', $group['items']) }}</flux:text>
-                </div>
-            @endforeach
-        </div>
-    </section>
 </div>
