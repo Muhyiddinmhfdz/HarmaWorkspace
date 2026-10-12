@@ -23,7 +23,7 @@ class Navigation
             $items = [];
 
             foreach ($group['items'] as $item) {
-                if (! $user->can($item['permission'])) {
+                if (! $user->canAny((array) $item['permission'])) {
                     continue;
                 }
 

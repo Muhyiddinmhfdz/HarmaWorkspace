@@ -3,7 +3,7 @@
 namespace Tests;
 
 use App\Models\User;
-use Database\Seeders\System\PermissionSeeder;
+use Database\Seeders\System\SystemSeeder;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Laravel\Fortify\Features;
 
@@ -14,7 +14,7 @@ abstract class TestCase extends BaseTestCase
      */
     protected bool $seed = true;
 
-    protected string $seeder = PermissionSeeder::class;
+    protected string $seeder = SystemSeeder::class;
 
     protected function skipUnlessFortifyHas(string $feature, ?string $message = null): void
     {

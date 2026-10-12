@@ -21,6 +21,12 @@ return [
         ],
     ],
     [
+        'heading' => 'Projects',
+        'items' => [
+            ['label' => 'Projects', 'icon' => 'folder', 'route' => 'projects.index', 'active' => 'projects.*', 'permission' => ['project.view', 'project.view-all']],
+        ],
+    ],
+    [
         'heading' => 'Team',
         'items' => [
             ['label' => 'Members', 'icon' => 'users', 'route' => 'admin.users.index', 'active' => 'admin.users.*', 'permission' => 'user.view'],

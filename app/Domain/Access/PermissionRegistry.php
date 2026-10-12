@@ -14,6 +14,32 @@ namespace App\Domain\Access;
 class PermissionRegistry
 {
     /**
+     * Permissions introduced in Phase 2, granted to the existing default roles
+     * once by a data migration (roles created later receive them via defaultRoles()).
+     *
+     * @var array<string, list<string>>
+     */
+    public const array PHASE_2_DEFAULTS = [
+        'Management' => [
+            'project.view',
+            'project.view-all',
+            'project.create',
+            'project.update',
+            'project.manage-departments',
+            'project.manage-members',
+            'project.manage-schedule',
+            'project.manage-milestones',
+            'project.manage-progress',
+            'project.complete',
+            'project.archive',
+            'project.manage-visibility',
+        ],
+        'Staff' => [
+            'project.view',
+        ],
+    ];
+
+    /**
      * Permissions grouped by module, with an Indonesian description.
      *
      * @return array<string, array{label: string, permissions: array<string, string>}>
@@ -71,6 +97,24 @@ class PermissionRegistry
                 'label' => 'Master Data',
                 'permissions' => [
                     'master-data.view' => 'Membuka Master Data Center',
+                    'master-data.manage' => 'Mengelola master Project (category, status, priority, role, health)',
+                ],
+            ],
+            'project' => [
+                'label' => 'Projects',
+                'permissions' => [
+                    'project.view' => 'Melihat project yang relevan (owner, PM, anggota, department yang dipimpin, atau internal)',
+                    'project.view-all' => 'Melihat seluruh project',
+                    'project.create' => 'Membuat project baru',
+                    'project.update' => 'Mengubah informasi, owner, PM, dan status project',
+                    'project.manage-departments' => 'Mengatur lead & supporting department project',
+                    'project.manage-members' => 'Mengatur anggota dan project role',
+                    'project.manage-schedule' => 'Mengubah jadwal project',
+                    'project.manage-milestones' => 'Mengelola milestone',
+                    'project.manage-progress' => 'Mengubah progress dan health project',
+                    'project.complete' => 'Menyelesaikan atau membatalkan project',
+                    'project.archive' => 'Mengarsipkan project yang sudah selesai',
+                    'project.manage-visibility' => 'Membuka project untuk seluruh perusahaan (visibility Company)',
                 ],
             ],
             'role' => [
@@ -154,11 +198,13 @@ class PermissionRegistry
                 'permission.view',
                 'audit.view',
                 'settings.view',
+                ...self::PHASE_2_DEFAULTS['Management'],
             ],
             'Staff' => [
                 'dashboard.view',
                 'department.view',
                 'client.view',
+                ...self::PHASE_2_DEFAULTS['Staff'],
             ],
         ];
     }

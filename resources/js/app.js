@@ -40,6 +40,32 @@ export function notify(type = 'info', message = '', title = null) {
 
 window.notify = notify;
 
+/**
+ * Confirmation dialog for sensitive actions. Resolves to true when confirmed.
+ * Usage in Blade: x-on:click="hwConfirm({...}).then(ok => ok && $wire.archive())"
+ * The backend still authorizes every action; this is only a UX safeguard.
+ */
+export function hwConfirm({ title, text = '', confirmText = 'Lanjutkan', cancelText = 'Batal', danger = false } = {}) {
+    return Swal.fire({
+        title,
+        text,
+        icon: danger ? 'warning' : 'question',
+        showCancelButton: true,
+        confirmButtonText: confirmText,
+        cancelButtonText: cancelText,
+        reverseButtons: true,
+        focusCancel: danger,
+        buttonsStyling: false,
+        customClass: {
+            popup: 'hw-confirm',
+            confirmButton: danger ? 'hw-confirm-btn hw-confirm-danger' : 'hw-confirm-btn hw-confirm-primary',
+            cancelButton: 'hw-confirm-btn hw-confirm-cancel',
+        },
+    }).then((result) => result.isConfirmed);
+}
+
+window.hwConfirm = hwConfirm;
+
 const requestErrors = {
     401: 'Sesi Anda telah berakhir. Silakan login kembali.',
     403: 'Anda tidak memiliki akses untuk melakukan aksi ini.',

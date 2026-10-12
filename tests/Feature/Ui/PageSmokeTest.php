@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Department;
 use App\Models\DepartmentMembership;
 use App\Models\Position;
+use App\Models\Project;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -20,7 +21,7 @@ class PageSmokeTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * @return array<string, array{0: string}>
+     * @return array<string, array{0: string, 1?: string}>
      */
     public static function pages(): array
     {
@@ -43,11 +44,23 @@ class PageSmokeTest extends TestCase
             'client show' => ['clients.show'],
             'master data' => ['master-data.index'],
             'settings' => ['settings.index'],
+            'projects' => ['projects.index'],
+            'project create' => ['projects.create'],
+            'project show' => ['projects.show'],
+            'project edit' => ['projects.edit'],
+            'project milestones tab' => ['projects.show', 'milestones'],
+            'project team tab' => ['projects.show', 'team'],
+            'project activity tab' => ['projects.show', 'activity'],
+            'master project statuses' => ['master-data.manage', 'project-statuses'],
+            'master project priorities' => ['master-data.manage', 'project-priorities'],
+            'master project categories' => ['master-data.manage', 'project-categories'],
+            'master project roles' => ['master-data.manage', 'project-roles'],
+            'master project health' => ['master-data.manage', 'project-health'],
         ];
     }
 
     #[DataProvider('pages')]
-    public function test_page_renders_for_super_admin(string $routeName): void
+    public function test_page_renders_for_super_admin(string $routeName, ?string $variant = null): void
     {
         $admin = $this->superAdmin();
         $department = Department::factory()->create();
@@ -59,12 +72,17 @@ class PageSmokeTest extends TestCase
             'position_id' => $position->id,
         ]);
         $client = Client::factory()->create();
+        $project = Project::factory()->create(['client_id' => $client->id]);
+        $project->milestones()->forceCreate(['name' => 'Go Live', 'planned_date' => today()->addWeek(), 'current_due_date' => today()->addWeek()]);
 
         $parameters = match ($routeName) {
             'admin.users.show', 'admin.users.edit' => ['user' => $member],
             'admin.departments.show' => ['department' => $department],
             'admin.roles.edit' => ['role' => Role::findByName('Staff')],
             'clients.show' => ['client' => $client],
+            'projects.show' => ['project' => $project, 'tab' => $variant ?? 'overview'],
+            'projects.edit' => ['project' => $project],
+            'master-data.manage' => ['type' => $variant],
             default => [],
         };
 

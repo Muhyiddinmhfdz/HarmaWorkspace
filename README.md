@@ -4,7 +4,7 @@
 
 Aplikasi internal untuk mengelola organisasi, master data, dan (pada phase berikutnya) project multi-divisi, task, ticket, workflow, approval, serta deadline.
 
-Status: **Phase 1 — Foundation** (authentication, user & department management, position, client, role & permission, Master Data Center, audit log, system settings).
+Status: **Phase 2 — Project Multi-Division** selesai di atas fondasi Phase 1 (authentication, organisasi, role & permission, master data, audit, settings).
 
 ## Stack
 
@@ -36,5 +36,6 @@ vendor/bin/phpstan analyse
 ## Documentation
 
 - [docs/phase-0-blueprint.md](docs/phase-0-blueprint.md) — arsitektur, database konseptual, roadmap
-- [docs/phase-1-foundation.md](docs/phase-1-foundation.md) — instalasi, struktur kode, role & permission, audit, testing, ADR
+- [docs/phase-1-foundation.md](docs/phase-1-foundation.md) — instalasi, struktur kode, role & permission, audit, testing, ADR-001–021
+- [docs/phase-2-project-management.md](docs/phase-2-project-management.md) — project multi-divisi, numbering, jadwal, milestone, visibility, ADR-022–038
 - `.ai/guidelines/harmaworkspace.md` — aturan proyek untuk AI agent; jalankan `php artisan boost:install` untuk membangkitkan `CLAUDE.md`

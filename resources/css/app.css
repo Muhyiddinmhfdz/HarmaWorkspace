@@ -90,3 +90,53 @@ select:focus[data-flux-control] {
 .swal2-popup.hw-toast .swal2-timer-progress-bar {
     background: var(--color-accent);
 }
+
+/* SweetAlert2 confirmation dialogs */
+.swal2-popup.hw-confirm {
+    font-family: var(--font-sans);
+    border-radius: 1rem;
+    padding: 1.5rem;
+    width: 28rem;
+    max-width: calc(100vw - 2rem);
+}
+
+.swal2-popup.hw-confirm .swal2-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--color-zinc-900);
+}
+
+.swal2-popup.hw-confirm .swal2-html-container {
+    font-size: 0.875rem;
+    color: var(--color-zinc-600);
+}
+
+.swal2-popup.hw-confirm .swal2-actions {
+    gap: 0.5rem;
+    width: 100%;
+    justify-content: flex-end;
+}
+
+.hw-confirm-btn {
+    border-radius: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.hw-confirm-primary {
+    background: var(--color-accent);
+    color: var(--color-accent-foreground);
+}
+
+.hw-confirm-danger {
+    background: var(--color-red-600);
+    color: var(--color-white);
+}
+
+.hw-confirm-cancel {
+    background: var(--color-white);
+    color: var(--color-zinc-700);
+    border: 1px solid var(--color-zinc-200);
+}

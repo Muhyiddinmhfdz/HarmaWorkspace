@@ -24,12 +24,12 @@ class ChangeMasterStatus
 
         $record->forceFill(['is_active' => $active])->save();
 
-        $type = Relation::getMorphAlias($record::class);
+        $type = (string) Relation::getMorphAlias($record::class);
         $name = $record->getAttribute('name');
 
         $this->audit->recordChanges(
             event: $type.($active ? '.activated' : '.deactivated'),
-            description: ($active ? 'Mengaktifkan ' : 'Menonaktifkan ').$type.' '.$name,
+            description: ($active ? 'Mengaktifkan ' : 'Menonaktifkan ').str_replace('_', ' ', $type).' '.$name,
             subject: $record,
         );
 

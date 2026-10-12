@@ -4,13 +4,14 @@ namespace App\Domain\System\Search;
 
 use App\Models\Client;
 use App\Models\Department;
+use App\Models\Project;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
  * Global search across the modules available so far. Each source is only
  * searched when the user may view it, and uses the same visibility rules as
- * the module's list page. Projects, tasks and tickets join in later phases.
+ * the module's list page. Tasks and tickets join in later phases.
  */
 class GlobalSearch
 {
@@ -29,6 +30,25 @@ class GlobalSearch
 
         $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $term).'%';
         $results = [];
+
+        if ($user->can('viewAny', Project::class)) {
+            $results[] = [
+                'group' => 'Projects',
+                'items' => array_values(Project::query()
+                    ->visibleTo($user)
+                    ->where(fn (Builder $query) => $query->where('number', 'like', $like)->orWhere('name', 'like', $like))
+                    ->orderByRaw('archived_at IS NULL DESC')
+                    ->orderByDesc('id')
+                    ->limit(self::LIMIT_PER_GROUP)
+                    ->get(['id', 'number', 'name'])
+                    ->map(fn (Project $found): array => [
+                        'title' => $found->name,
+                        'subtitle' => $found->number,
+                        'url' => route('projects.show', $found),
+                    ])
+                    ->all()),
+            ];
+        }
 
         if ($user->can('user.view')) {
             $results[] = [

@@ -1,6 +1,6 @@
 # HarmaWorkspace Project Guidelines
 
-HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular monolith: Laravel 13, MySQL, Livewire 4, Flux UI free, Fortify, Spatie Permission + Activitylog). The architecture blueprint is `docs/phase-0-blueprint.md`; the implemented foundation, conventions and ADRs are in `docs/phase-1-foundation.md`. Read both before building a module.
+HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular monolith: Laravel 13, MySQL, Livewire 4, Flux UI free, Fortify, Spatie Permission + Activitylog). The architecture blueprint is `docs/phase-0-blueprint.md`; the implemented foundation, conventions and ADRs are in `docs/phase-1-foundation.md` and `docs/phase-2-project-management.md`. Read them before building a module.
 
 ## Phase discipline
 - Work only on the current phase in `docs/phase-0-blueprint.md` §21. Do not build Project/Task/Ticket/Workflow/Approval/Gantt features ahead of their phase.
@@ -21,7 +21,9 @@ HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular
 - Logic uses master `code`, `level`, or semantic flags (`is_initial`, `is_final`, `is_closed`, `counts_as_completed`).
 - PHP enums are only for technical values listed in blueprint §9.3.
 - Masters used by transactions are deactivated/archived, never hard-deleted. A master's `code` is read-only once it is referenced.
-- `statuses` and `priorities` (Phase 2) are scoped tables (`scope` = project/task/ticket); always validate scope on assignment through a central rule/action.
+- `statuses` and `priorities` are scoped tables (`scope` = project/task/ticket); resolve them through `App\Domain\MasterData\ScopedMasterGuard` in every write path.
+- New configurable masters are added as a `MasterDefinition` in `App\Domain\MasterData\MasterRegistry` (generic page `/master-data/{type}`), not as a new page.
+- Document numbers come from `App\Domain\System\Numbering\NumberGenerator` (row-locked `number_sequences`), never `max(id) + 1`.
 
 ## Authorization
 - Check permissions (`$user->can('ticket.assign')`) or policies — never role names. The only exception is the Super Admin `Gate::before` in `AppServiceProvider`, using `config('harma.super_admin_role')`.
@@ -32,7 +34,11 @@ HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular
 ## History & audit
 - Assignment, schedule, status, transfer, and approval decision rows are append-only. Reassigning closes the old row (`unassigned_at`) and inserts a new one.
 - Schedule columns (`planned_*`, `current_*`, `due_at`) change only through the `ChangeSchedule` action, which writes `schedule_changes` with a reason. They are not mass-assignable.
-- Status changes go through the workflow `TransitionAction` only.
+- Project state changes only through `app/Domain/Project/Actions` (status, completion, archive, schedule, progress, health, owner/PM, departments, members, milestones). Project Manager, Owner and department leads are contextual (columns/records), never Spatie roles; `ProjectPolicy` combines visibility with permission or contextual role.
+- Project visibility has one source: `Project::scopeVisibleTo()` / `isVisibleTo()`. Lists, counts, search and policies must use it.
+- Project visibility (`restricted` default / `department` / `company`) is independent from the client relation and only controls viewing. It changes only via `ChangeProjectVisibility`; `company` requires `project.manage-visibility`.
+- Project status transitions are validated by `App\Domain\Project\Support\ProjectLifecycle` (by status code/flags, never names). Show available actions, not a free status dropdown. Completion = `CompleteProject`, archive = `ArchiveProject`.
+- Contextual Project Manager rights never cover administrative actions (archive, company visibility, master data). Confirm sensitive actions with `hwConfirm()` (SweetAlert2), never the browser `confirm()` or `wire:confirm`.
 - Important changes are recorded through `App\Domain\Audit\AuditLogger` with a semantic event code (`user.deactivated`, `role.updated`, ...). Never log passwords, tokens, or 2FA secrets.
 
 ## Database

@@ -41,11 +41,8 @@ class Client extends Model
         ];
     }
 
-    /**
-     * Projects and tickets will reference clients from Phase 2 onwards.
-     */
     public function isInUse(): bool
     {
-        return false;
+        return Project::query()->where('client_id', $this->id)->exists();
     }
 }

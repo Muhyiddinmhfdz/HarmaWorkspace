@@ -8,7 +8,16 @@ use App\Models\Client;
 use App\Models\Department;
 use App\Models\DepartmentMembership;
 use App\Models\Position;
+use App\Models\Priority;
+use App\Models\Project;
+use App\Models\ProjectCategory;
+use App\Models\ProjectDepartment;
+use App\Models\ProjectHealthStatus;
+use App\Models\ProjectMember;
+use App\Models\ProjectMilestone;
+use App\Models\ProjectRole;
 use App\Models\Setting;
+use App\Models\Status;
 use App\Models\User;
 use App\Policies\RolePolicy;
 use Carbon\CarbonImmutable;
@@ -76,6 +85,15 @@ class AppServiceProvider extends ServiceProvider
             'position' => Position::class,
             'client' => Client::class,
             'setting' => Setting::class,
+            'status' => Status::class,
+            'priority' => Priority::class,
+            'project' => Project::class,
+            'project_category' => ProjectCategory::class,
+            'project_role' => ProjectRole::class,
+            'project_health_status' => ProjectHealthStatus::class,
+            'project_department' => ProjectDepartment::class,
+            'project_member' => ProjectMember::class,
+            'project_milestone' => ProjectMilestone::class,
             'role' => Role::class,
             'permission' => Permission::class,
         ]);
@@ -90,6 +108,7 @@ class AppServiceProvider extends ServiceProvider
         Route::model('department', Department::class);
         Route::model('client', Client::class);
         Route::model('role', Role::class);
+        Route::model('project', Project::class);
     }
 
     protected function configureAuthorization(): void

@@ -3,6 +3,7 @@
 use App\Models\Client;
 use App\Models\Department;
 use App\Models\Position;
+use App\Models\Project;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Role;
@@ -86,6 +87,23 @@ Route::middleware('auth')->group(function () {
     Route::livewire('master-data', 'pages::master-data.index')
         ->middleware('can:master-data.view')
         ->name('master-data.index');
+    Route::livewire('master-data/{type}', 'pages::master-data.manage')
+        ->middleware('can:master-data.view')
+        ->name('master-data.manage');
+
+    // Projects
+    Route::livewire('projects', 'pages::projects.index')
+        ->middleware('can:viewAny,'.Project::class)
+        ->name('projects.index');
+    Route::livewire('projects/create', 'pages::projects.create')
+        ->middleware('can:create,'.Project::class)
+        ->name('projects.create');
+    Route::livewire('projects/{project}', 'pages::projects.show')
+        ->middleware('can:view,project')
+        ->name('projects.show');
+    Route::livewire('projects/{project}/edit', 'pages::projects.edit')
+        ->middleware('can:update,project')
+        ->name('projects.edit');
 
     Route::livewire('settings', 'pages::settings.index')
         ->middleware('can:settings.view')
