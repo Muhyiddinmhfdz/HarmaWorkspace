@@ -13,7 +13,7 @@ new class extends Component {
     #[Modelable]
     public ?int $value = null;
 
-    public string $label = 'Ticket';
+    public string $label = 'Report';
 
     public bool $required = false;
 
@@ -75,7 +75,7 @@ new class extends Component {
                 <flux:button size="xs" variant="ghost" icon="x-mark" wire:click="clear" aria-label="Clear selection" />
             </div>
         @else
-            <flux:input wire:model.live.debounce.250ms="search" wire:focus="$set('open', true)" icon="magnifying-glass" placeholder="Cari nomor atau judul ticket..." autocomplete="off" />
+            <flux:input wire:model.live.debounce.250ms="search" wire:focus="$set('open', true)" icon="magnifying-glass" placeholder="Cari nomor atau judul report..." autocomplete="off" />
         @endif
     </flux:field>
 
@@ -87,7 +87,7 @@ new class extends Component {
                     <div class="truncate text-sm text-zinc-800">{{ $result->title }}</div>
                 </button>
             @empty
-                <div class="px-3 py-3 text-sm text-zinc-500">Tidak ada ticket yang cocok.</div>
+                <div class="px-3 py-3 text-sm text-zinc-500">Tidak ada report yang cocok.</div>
             @endforelse
         </div>
     @endif

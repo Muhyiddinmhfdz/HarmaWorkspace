@@ -307,7 +307,7 @@ new class extends Component {
         if ($key === 'accept') {
             $this->authorize('accept', $ticket);
             $accept->handle($ticket, auth()->user());
-            $this->done('Ticket berhasil diterima.');
+            $this->done('Laporan berhasil diterima.');
 
             return;
         }
@@ -370,12 +370,12 @@ new class extends Component {
     public function stepConfig(): array
     {
         return match ($this->stepOperation) {
-            'request_information' => ['title' => 'Request Information', 'text' => 'Ticket menunggu jawaban requester, lalu kembali ke status saat ini.', 'label' => 'Informasi yang dibutuhkan', 'required' => true, 'button' => 'Send Request', 'danger' => false],
-            'provide_information' => ['title' => 'Provide Information', 'text' => 'Jawaban Anda dikirim ke percakapan dan ticket kembali dikerjakan.', 'label' => 'Informasi', 'required' => true, 'button' => 'Send Information', 'danger' => false],
-            'send_to_review' => ['title' => 'Send to Review', 'text' => 'Requester atau reviewer akan memeriksa hasil pekerjaan.', 'label' => 'Catatan untuk reviewer (opsional)', 'required' => false, 'button' => 'Send to Review', 'danger' => false],
+            'request_information' => ['title' => 'Request Information', 'text' => 'Laporan menunggu jawaban pelapor, lalu kembali ke status saat ini.', 'label' => 'Informasi yang dibutuhkan', 'required' => true, 'button' => 'Send Request', 'danger' => false],
+            'provide_information' => ['title' => 'Provide Information', 'text' => 'Jawaban Anda dikirim ke percakapan dan laporan kembali dikerjakan.', 'label' => 'Informasi', 'required' => true, 'button' => 'Send Information', 'danger' => false],
+            'send_to_review' => ['title' => 'Send to Review', 'text' => 'Pelapor atau reviewer akan memeriksa hasil pekerjaan.', 'label' => 'Catatan untuk reviewer (opsional)', 'required' => false, 'button' => 'Send to Review', 'danger' => false],
             'request_revision' => ['title' => 'Request Revision', 'text' => 'Jelaskan apa yang masih perlu diperbaiki.', 'label' => 'Alasan revisi', 'required' => true, 'button' => 'Request Revision', 'danger' => false],
-            'reopen' => ['title' => 'Reopen Ticket', 'text' => 'Riwayat penyelesaian sebelumnya tetap tercatat di Activity.', 'label' => 'Alasan membuka kembali', 'required' => true, 'button' => 'Reopen Ticket', 'danger' => false],
-            'cancel' => ['title' => 'Cancel Ticket', 'text' => 'Ticket yang dibatalkan tidak dapat dikerjakan lagi.', 'label' => 'Alasan pembatalan', 'required' => true, 'button' => 'Cancel Ticket', 'danger' => true],
+            'reopen' => ['title' => 'Reopen Report', 'text' => 'Riwayat penyelesaian sebelumnya tetap tercatat di Activity.', 'label' => 'Alasan membuka kembali', 'required' => true, 'button' => 'Reopen Report', 'danger' => false],
+            'cancel' => ['title' => 'Cancel Report', 'text' => 'Laporan yang dibatalkan tidak dapat dikerjakan lagi.', 'label' => 'Alasan pembatalan', 'required' => true, 'button' => 'Cancel Report', 'danger' => true],
             default => ['title' => '', 'text' => '', 'label' => '', 'required' => false, 'button' => 'Save', 'danger' => false],
         };
     }
@@ -407,7 +407,7 @@ new class extends Component {
             'resolutionId' => ['required', 'integer'],
             'resolutionNotes' => ['required', 'string', 'max:5000'],
             'primaryTicketId' => [$this->resolutionNeedsPrimary() ? 'required' : 'nullable', 'integer'],
-        ], ['primaryTicketId.required' => 'Pilih ticket utama untuk resolusi ini.'], ['resolutionId' => 'Resolution', 'resolutionNotes' => 'Resolution notes']);
+        ], ['primaryTicketId.required' => 'Pilih report utama untuk resolusi ini.'], ['resolutionId' => 'Resolution', 'resolutionNotes' => 'Resolution notes']);
 
         $this->runTransition($transition->id, array_filter([
             'resolution_id' => (int) $this->resolutionId,
@@ -448,7 +448,7 @@ new class extends Component {
             : $assignments->assign($ticket, (int) $this->picUserId, auth()->user());
 
         Flux::modal('ticket-pic')->close();
-        $this->done('Ticket berhasil ditugaskan ke '.User::query()->whereKey($this->picUserId)->value('name').'.');
+        $this->done('Laporan berhasil ditugaskan ke '.User::query()->whereKey($this->picUserId)->value('name').'.');
     }
 
     public function updatedCollaboratorToAdd(?int $userId): void
@@ -497,13 +497,13 @@ new class extends Component {
         $name = $ticket->loadMissing('currentDepartment:id,name')->currentDepartment->name;
 
         if (! auth()->user()->can('view', $ticket->refresh())) {
-            $this->notifyAfterRedirect('success', 'Ticket berhasil dipindahkan ke '.$name.'.');
+            $this->notifyAfterRedirect('success', 'Laporan berhasil dipindahkan ke '.$name.'.');
             $this->redirectRoute('tickets.inbox', navigate: true);
 
             return;
         }
 
-        $this->done('Ticket berhasil dipindahkan ke '.$name.'.');
+        $this->done('Laporan berhasil dipindahkan ke '.$name.'.');
     }
 
     public function openPriority(): void
@@ -521,7 +521,7 @@ new class extends Component {
         $changePriority->handle($this->ticket, (int) $this->priorityId, auth()->user());
 
         Flux::modal('ticket-priority')->close();
-        $this->done('Priority ticket diperbarui.');
+        $this->done('Priority laporan diperbarui.');
     }
 
     public function openDeadline(): void
@@ -544,7 +544,7 @@ new class extends Component {
         $changeDeadline->handle($this->ticket, $this->dueDate ?: null, $this->deadlineReason ?: null, auth()->user());
 
         Flux::modal('ticket-deadline')->close();
-        $this->done('Deadline ticket diperbarui.');
+        $this->done('Deadline laporan diperbarui.');
     }
 
     public function openRelation(): void
@@ -558,12 +558,12 @@ new class extends Component {
     public function addRelation(ManageTicketRelations $relations): void
     {
         $this->authorize('update', $this->ticket);
-        $this->validate(['relatedTicketId' => ['required', 'integer'], 'relationTypeId' => ['required', 'integer']], ['relatedTicketId.required' => 'Pilih ticket yang akan dihubungkan.']);
+        $this->validate(['relatedTicketId' => ['required', 'integer'], 'relationTypeId' => ['required', 'integer']], ['relatedTicketId.required' => 'Pilih report yang akan dihubungkan.']);
 
         $relations->add($this->ticket, (int) $this->relatedTicketId, (int) $this->relationTypeId, auth()->user());
 
         Flux::modal('ticket-relation')->close();
-        $this->done('Ticket berhasil dihubungkan.');
+        $this->done('Report berhasil dihubungkan.');
     }
 
     public function removeRelation(int $relationId, ManageTicketRelations $relations): void
@@ -572,7 +572,7 @@ new class extends Component {
 
         $relations->remove($this->ticket, $relationId, auth()->user());
 
-        $this->done('Hubungan ticket dilepas.');
+        $this->done('Hubungan report dilepas.');
     }
 
     private function done(string $message): void
@@ -594,11 +594,17 @@ new class extends Component {
 @php($dangerKeys = ['cancel', 'reject'])
 
 <div class="mx-auto w-full max-w-6xl">
-    {{-- Header --}}
+    {{-- Header: what kind of report, status, priority --}}
     <div class="mb-6">
         <flux:breadcrumbs class="mb-3">
-            <flux:breadcrumbs.item :href="route('tickets.index')" wire:navigate>Tickets</flux:breadcrumbs.item>
-            <flux:breadcrumbs.item>{{ $ticket->number }}</flux:breadcrumbs.item>
+            @if ($ticket->project && $can['project'])
+                <flux:breadcrumbs.item :href="route('projects.index')" wire:navigate class="max-sm:hidden">Projects</flux:breadcrumbs.item>
+                <flux:breadcrumbs.item :href="route('projects.show', $ticket->project)" wire:navigate>{{ $ticket->project->name }}</flux:breadcrumbs.item>
+                <flux:breadcrumbs.item :href="route('projects.show', ['project' => $ticket->project, 'tab' => 'reports'])" wire:navigate>Reports</flux:breadcrumbs.item>
+            @else
+                <flux:breadcrumbs.item :href="route('tickets.index')" wire:navigate>Reports</flux:breadcrumbs.item>
+            @endif
+            <flux:breadcrumbs.item class="max-sm:hidden">{{ $ticket->number }}</flux:breadcrumbs.item>
         </flux:breadcrumbs>
 
         <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -606,6 +612,7 @@ new class extends Component {
                 <div class="font-mono text-sm text-zinc-500">{{ $ticket->number }}</div>
                 <flux:heading size="xl" level="1" class="mt-0.5 [overflow-wrap:anywhere]">{{ $ticket->title }}</flux:heading>
                 <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <flux:badge size="sm" :color="$ticket->type->color ?? 'zinc'" class="uppercase">{{ $ticket->type->name }}</flux:badge>
                     <x-ui.master-badge :master="$ticket->status" />
                     <x-ui.master-badge :master="$ticket->priority" />
                     @if ($ticket->isOverdue())
@@ -621,18 +628,18 @@ new class extends Component {
                 @if ($actions['primary'])
                     @php($primary = $actions['primary'])
                     @if ($primary['key'] === 'close')
-                        <flux:button variant="primary" icon="check-circle" x-on:click="hwConfirm({ title: 'Tutup ticket?', text: 'Ticket dianggap selesai dan final. Masih dapat dibuka kembali bila diperlukan.', confirmText: 'Close Ticket' }).then(ok => ok && $wire.perform('close'))">{{ $primary['label'] }}</flux:button>
+                        <flux:button variant="primary" icon="check-circle" x-on:click="hwConfirm({ title: 'Tutup report?', text: 'Report dianggap selesai dan final. Masih dapat dibuka kembali bila diperlukan.', confirmText: 'Close' }).then(ok => ok && $wire.perform('close'))">{{ $primary['label'] }}</flux:button>
                     @else
                         <flux:button variant="primary" wire:click="perform('{{ $primary['key'] }}')" wire:loading.attr="disabled" wire:target="perform">{{ $primary['label'] }}</flux:button>
                     @endif
                 @endif
                 @if ($actions['more'] !== [] || $can['update'] || $can['transfer'] || $can['priority'] || $can['deadline'])
                     <flux:dropdown position="bottom" align="end">
-                        <flux:button icon:trailing="chevron-down">More</flux:button>
+                        <flux:button icon="ellipsis-horizontal" aria-label="More actions" />
                         <flux:menu>
                             @foreach ($actions['more'] as $action)
                                 @if ($action['key'] === 'close')
-                                    <flux:menu.item icon="check-circle" wire:key="act-close" x-on:click="hwConfirm({ title: 'Tutup ticket?', text: 'Ticket dianggap selesai dan final.', confirmText: 'Close Ticket' }).then(ok => ok && $wire.perform('close'))">{{ $action['label'] }}</flux:menu.item>
+                                    <flux:menu.item icon="check-circle" wire:key="act-close" x-on:click="hwConfirm({ title: 'Tutup report?', text: 'Report dianggap selesai dan final.', confirmText: 'Close' }).then(ok => ok && $wire.perform('close'))">{{ $action['label'] }}</flux:menu.item>
                                 @else
                                     <flux:menu.item :icon="in_array($action['key'], $dangerKeys, true) ? 'x-circle' : 'arrow-right-circle'" :variant="in_array($action['key'], $dangerKeys, true) ? 'danger' : null"
                                         wire:key="act-{{ $action['key'] }}" wire:click="perform('{{ $action['key'] }}')">{{ $action['label'] }}</flux:menu.item>
@@ -660,7 +667,7 @@ new class extends Component {
         </div>
     </div>
 
-    {{-- Callouts: what happens next --}}
+    {{-- Callouts: what happens next, and the resolution once there is one --}}
     @if ($ticket->status->is_blocked)
         <flux:callout variant="warning" icon="chat-bubble-left-ellipsis" class="mb-6" heading="Waiting for Information">
             <flux:callout.text>
@@ -668,7 +675,7 @@ new class extends Component {
                     {{ $this->lastRequest->user->name }} meminta informasi tambahan:
                     <span class="mt-1 block whitespace-pre-line font-medium">“{{ $this->lastRequest->body }}”</span>
                 @else
-                    Ticket menunggu informasi tambahan dari requester.
+                    Report menunggu informasi tambahan dari pelapor.
                 @endif
             </flux:callout.text>
             @if (collect($actions['more'])->contains('key', 'provide_information') || ($actions['primary']['key'] ?? null) === 'provide_information')
@@ -692,17 +699,17 @@ new class extends Component {
             @endif
         </flux:callout>
     @elseif ($ticket->status->counts_as_completed && ! $ticket->status->is_terminal)
-        <flux:callout variant="success" icon="check-badge" class="mb-6" heading="Resolution Ready">
+        <flux:callout variant="success" icon="check-badge" class="mb-6" heading="Resolution">
             <flux:callout.text>
-                Resolution: <span class="font-medium">{{ $ticket->resolution?->name }}</span>
+                <span class="font-medium">{{ $ticket->resolution?->name }}</span>
                 @if ($ticket->resolution_notes)
-                    <span class="mt-1 block whitespace-pre-line">Catatan: {{ $ticket->resolution_notes }}</span>
+                    <span class="mt-1 block whitespace-pre-line">{{ $ticket->resolution_notes }}</span>
                 @endif
                 <span class="mt-1 block text-xs">Diselesaikan oleh {{ $ticket->resolver->name ?? 'System' }} · {{ $ticket->resolved_at?->translatedFormat('d M Y H:i') }}</span>
             </flux:callout.text>
         </flux:callout>
     @elseif ($ticket->status->is_terminal)
-        <flux:callout :variant="$ticket->status->counts_as_completed ? 'secondary' : 'danger'" :icon="$ticket->status->counts_as_completed ? 'lock-closed' : 'x-circle'" class="mb-6" :heading="'Ticket '.$ticket->status->name">
+        <flux:callout :variant="$ticket->status->counts_as_completed ? 'secondary' : 'danger'" :icon="$ticket->status->counts_as_completed ? 'lock-closed' : 'x-circle'" class="mb-6" :heading="'Report '.$ticket->status->name">
             <flux:callout.text>
                 @if ($ticket->rejectionReason)
                     Ditolak: <span class="font-medium">{{ $ticket->rejectionReason->name }}</span>
@@ -710,22 +717,38 @@ new class extends Component {
                         <span class="mt-1 block whitespace-pre-line">{{ $ticket->rejection_notes }}</span>
                     @endif
                 @elseif ($ticket->status->counts_as_completed)
-                    Resolution: {{ $ticket->resolution?->name ?? '—' }}. Ticket sudah final{{ $ticket->closed_at ? ' sejak '.$ticket->closed_at->translatedFormat('d M Y H:i') : '' }}.
+                    Resolution: <span class="font-medium">{{ $ticket->resolution?->name ?? '—' }}</span>
+                    @if ($ticket->resolution_notes)
+                        <span class="mt-1 block whitespace-pre-line">{{ $ticket->resolution_notes }}</span>
+                    @endif
+                    <span class="mt-1 block text-xs">Report sudah final{{ $ticket->closed_at ? ' sejak '.$ticket->closed_at->translatedFormat('d M Y H:i') : '' }}.</span>
                 @else
-                    Ticket ini tidak lagi dikerjakan. Alasannya tercatat di Activity.
+                    Report ini tidak lagi dikerjakan. Alasannya tercatat di Activity.
                 @endif
             </flux:callout.text>
         </flux:callout>
     @endif
 
     <div class="grid gap-6 lg:grid-cols-3">
-        {{-- Properties: first on mobile (compact), right column on desktop --}}
+        {{-- Who and where: first on mobile (compact), right column on desktop --}}
         <aside class="h-fit min-w-0 rounded-xl border border-zinc-200 bg-white lg:order-last">
             <dl class="divide-y divide-zinc-100 px-5">
+                <div class="py-3">
+                    <dt class="text-xs text-zinc-500">Reported by</dt>
+                    <dd class="mt-1 text-sm">
+                        <span class="font-medium text-zinc-900">{{ $ticket->requester->name }}</span>
+                        @if ($ticket->requester->primaryMembership)
+                            <span class="block text-xs text-zinc-500">{{ $ticket->requester->primaryMembership->department->name }}</span>
+                        @endif
+                        @if ($ticket->created_by !== $ticket->requester_user_id && $ticket->creator)
+                            <span class="block text-xs text-zinc-500">Dibuat oleh {{ $ticket->creator->name }}</span>
+                        @endif
+                    </dd>
+                </div>
                 <div class="grid grid-cols-2 gap-4 py-3">
-                    <div>
+                    <div class="min-w-0">
                         <dt class="text-xs text-zinc-500">Department</dt>
-                        <dd class="mt-1 text-sm font-medium text-zinc-900">{{ $ticket->currentDepartment->name }}</dd>
+                        <dd class="mt-1 truncate text-sm font-medium text-zinc-900">{{ $ticket->currentDepartment->name }}</dd>
                     </div>
                     <div>
                         <dt class="flex items-center justify-between text-xs text-zinc-500">
@@ -738,7 +761,7 @@ new class extends Component {
                     </div>
                 </div>
                 <div class="py-3">
-                    <dt class="text-xs text-zinc-500">Main PIC</dt>
+                    <dt class="text-xs text-zinc-500">PIC</dt>
                     <dd class="mt-1 flex items-center justify-between gap-2">
                         @if ($ticket->picAssignment)
                             <span class="flex min-w-0 items-center gap-2">
@@ -753,6 +776,39 @@ new class extends Component {
                         @endif
                     </dd>
                 </div>
+                <x-ui.detail-item label="Project" class="py-3 sm:flex-col sm:gap-1">
+                    @if ($ticket->project && $can['project'])
+                        <a href="{{ route('projects.show', $ticket->project) }}" wire:navigate class="font-medium hover:underline">{{ $ticket->project->name }}</a>
+                    @elseif ($ticket->project)
+                        <span class="text-zinc-500">Project terbatas (Anda tidak memiliki akses)</span>
+                    @else
+                        <span class="text-zinc-400">Tanpa project</span>
+                    @endif
+                </x-ui.detail-item>
+                @if ($ticket->task)
+                    <x-ui.detail-item label="Related Task" class="py-3 sm:flex-col sm:gap-1">
+                        @if ($can['task'])
+                            <a href="{{ route('tasks.show', $ticket->task) }}" wire:navigate class="font-medium hover:underline">{{ $ticket->task->number }} — {{ $ticket->task->title }}</a>
+                        @else
+                            <span class="text-zinc-500">Task terbatas (Anda tidak memiliki akses)</span>
+                        @endif
+                    </x-ui.detail-item>
+                @endif
+                <div class="py-3">
+                    <dt class="flex items-center justify-between text-xs text-zinc-500">
+                        Deadline
+                        @if ($can['deadline'])
+                            <flux:button size="xs" variant="ghost" wire:click="openDeadline" inset="top bottom">Change</flux:button>
+                        @endif
+                    </dt>
+                    <dd class="mt-1 text-sm">
+                        @if ($ticket->current_due_at)
+                            <x-ui.deadline :date="$ticket->current_due_at" :done="! $ticket->isActive()" />
+                        @else
+                            <span class="text-zinc-400">Tanpa deadline</span>
+                        @endif
+                    </dd>
+                </div>
                 <div class="py-3">
                     <dt class="text-xs text-zinc-500">Collaborators</dt>
                     <dd class="mt-1 space-y-1">
@@ -764,7 +820,7 @@ new class extends Component {
                                 </span>
                                 @if ($can['assign'])
                                     <flux:button size="xs" variant="ghost" icon="x-mark" aria-label="Remove {{ $assignment->user->name }}"
-                                        x-on:click="hwConfirm({ title: 'Keluarkan kolaborator?', text: @js($assignment->user->name.' tidak lagi menjadi kolaborator ticket ini. Riwayatnya tetap tersimpan.'), confirmText: 'Keluarkan', danger: true }).then(ok => ok && $wire.removeCollaborator({{ $assignment->id }}))" />
+                                        x-on:click="hwConfirm({ title: 'Keluarkan kolaborator?', text: @js($assignment->user->name.' tidak lagi menjadi kolaborator report ini. Riwayatnya tetap tersimpan.'), confirmText: 'Keluarkan', danger: true }).then(ok => ok && $wire.removeCollaborator({{ $assignment->id }}))" />
                                 @endif
                             </div>
                         @empty
@@ -780,48 +836,35 @@ new class extends Component {
                         @endif
                     </dd>
                 </div>
-                <div class="py-3">
-                    <dt class="text-xs text-zinc-500">Requested by</dt>
-                    <dd class="mt-1 text-sm">
-                        <span class="font-medium text-zinc-900">{{ $ticket->requester->name }}</span>
-                        @if ($ticket->requester->primaryMembership)
-                            <span class="block text-xs text-zinc-500">{{ $ticket->requester->primaryMembership->department->name }}</span>
-                        @endif
-                        @if ($ticket->created_by !== $ticket->requester_user_id && $ticket->creator)
-                            <span class="block text-xs text-zinc-500">Dibuat oleh {{ $ticket->creator->name }}</span>
-                        @endif
-                    </dd>
-                </div>
-                <div class="py-3">
-                    <dt class="flex items-center justify-between text-xs text-zinc-500">
-                        Deadline
-                        @if ($can['deadline'])
-                            <flux:button size="xs" variant="ghost" wire:click="openDeadline" inset="top bottom">Change</flux:button>
-                        @endif
-                    </dt>
-                    <dd class="mt-1 text-sm">
-                        @if ($ticket->current_due_at)
-                            <x-ui.deadline :date="$ticket->current_due_at" :done="! $ticket->isActive()" />
-                            @if ($ticket->planned_due_at && ! $ticket->planned_due_at->isSameDay($ticket->current_due_at))
-                                <div class="text-xs text-zinc-500">Rencana awal {{ $ticket->planned_due_at->translatedFormat('d M Y') }}</div>
-                            @endif
-                        @else
-                            <span class="text-zinc-400">Tanpa deadline</span>
-                        @endif
-                    </dd>
-                </div>
-                @if ($ticket->client)
-                    <x-ui.detail-item label="Client" class="py-3 sm:flex-col sm:gap-1">{{ $ticket->client->name }}</x-ui.detail-item>
-                @endif
-                <x-ui.detail-item label="Type / Category" class="py-3 sm:flex-col sm:gap-1">{{ collect([$ticket->type->name, $ticket->category->name, $ticket->subcategory?->name])->filter()->join(' · ') }}</x-ui.detail-item>
-                <x-ui.detail-item label="Source" class="py-3 sm:flex-col sm:gap-1">{{ $ticket->source?->name }}</x-ui.detail-item>
-                <x-ui.detail-item label="Created" class="py-3 sm:flex-col sm:gap-1">
-                    {{ $ticket->created_at?->translatedFormat('d M Y H:i') }}
-                    @if ($ticket->accepted_at)
-                        <span class="block text-xs text-zinc-500">Diterima {{ $ticket->acceptor->name ?? '' }} · {{ $ticket->accepted_at->translatedFormat('d M Y H:i') }}</span>
-                    @endif
-                </x-ui.detail-item>
             </dl>
+
+            <details class="group border-t border-zinc-200 px-5 py-3">
+                <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-zinc-700 hover:text-zinc-900">
+                    More Details
+                    <flux:icon.chevron-down variant="micro" class="transition group-open:rotate-180" />
+                </summary>
+                <dl class="mt-3 space-y-3 text-sm">
+                    <div><dt class="text-xs text-zinc-500">Category</dt><dd class="text-zinc-800">{{ collect([$ticket->category->name, $ticket->subcategory?->name])->filter()->join(' · ') }}</dd></div>
+                    @if ($ticket->client)
+                        <div><dt class="text-xs text-zinc-500">Client</dt><dd class="text-zinc-800">{{ $ticket->client->name }}</dd></div>
+                    @endif
+                    @if ($ticket->source)
+                        <div><dt class="text-xs text-zinc-500">Source</dt><dd class="text-zinc-800">{{ $ticket->source->name }}</dd></div>
+                    @endif
+                    @if ($ticket->planned_due_at && $ticket->current_due_at && ! $ticket->planned_due_at->isSameDay($ticket->current_due_at))
+                        <div><dt class="text-xs text-zinc-500">Original deadline</dt><dd class="text-zinc-800">{{ $ticket->planned_due_at->translatedFormat('d M Y') }}</dd></div>
+                    @endif
+                    <div>
+                        <dt class="text-xs text-zinc-500">Created</dt>
+                        <dd class="text-zinc-800">
+                            {{ $ticket->created_at?->translatedFormat('d M Y H:i') }}
+                            @if ($ticket->accepted_at)
+                                <span class="block text-xs text-zinc-500">Diterima {{ $ticket->acceptor->name ?? '' }} · {{ $ticket->accepted_at->translatedFormat('d M Y H:i') }}</span>
+                            @endif
+                        </dd>
+                    </div>
+                </dl>
+            </details>
         </aside>
 
         {{-- Main --}}
@@ -837,62 +880,48 @@ new class extends Component {
 
             <livewire:tickets.attachments :ticket-id="$ticket->id" wire:key="attachments-{{ $ticket->id }}" />
 
-            {{-- Related work --}}
-            <div class="rounded-xl border border-zinc-200 bg-white p-5">
-                <div class="mb-3 flex items-center justify-between">
-                    <flux:heading size="lg">Related</flux:heading>
-                    @if ($can['relations'])
-                        <flux:button size="sm" variant="ghost" icon="link" wire:click="openRelation">Link ticket</flux:button>
-                    @endif
-                </div>
-                <dl class="divide-y divide-zinc-100">
-                    <x-ui.detail-item label="Project">
-                        @if ($ticket->project && $can['project'])
-                            <a href="{{ route('projects.show', $ticket->project) }}" wire:navigate class="font-medium hover:underline">{{ $ticket->project->name }}</a>
-                        @elseif ($ticket->project)
-                            <span class="text-zinc-500">Project terbatas (Anda tidak memiliki akses)</span>
-                        @endif
-                    </x-ui.detail-item>
-                    <x-ui.detail-item label="Task">
-                        @if ($ticket->task && $can['task'])
-                            <a href="{{ route('tasks.show', $ticket->task) }}" wire:navigate class="font-medium hover:underline">{{ $ticket->task->number }} — {{ $ticket->task->title }}</a>
-                        @elseif ($ticket->task)
-                            <span class="text-zinc-500">Task terbatas (Anda tidak memiliki akses)</span>
-                        @endif
-                    </x-ui.detail-item>
-                    <div class="py-3">
-                        <dt class="text-sm text-zinc-500">Related Tickets</dt>
-                        <dd class="mt-2 space-y-2">
-                            @forelse ($this->relations as $relation)
-                                <div wire:key="rel-{{ $relation['id'] }}" class="flex items-center justify-between gap-3">
-                                    @if ($relation['visible'])
-                                        <a href="{{ route('tickets.show', $relation['ticket']) }}" wire:navigate class="min-w-0">
-                                            <span class="font-mono text-xs text-zinc-500">{{ $relation['ticket']->number }} · {{ $relation['type'] }}</span>
-                                            <span class="block truncate text-sm font-medium text-zinc-800 hover:underline">{{ $relation['ticket']->title }}</span>
-                                        </a>
-                                    @else
-                                        <span class="min-w-0 text-sm text-zinc-500">{{ $relation['ticket']->number }} · {{ $relation['type'] }} (terbatas)</span>
-                                    @endif
-                                    @if ($can['relations'])
-                                        <flux:button size="xs" variant="ghost" icon="x-mark" aria-label="Unlink"
-                                            x-on:click="hwConfirm({ title: 'Lepas hubungan ticket?', confirmText: 'Lepas', danger: true }).then(ok => ok && $wire.removeRelation({{ $relation['id'] }}))" />
-                                    @endif
-                                </div>
-                            @empty
-                                <span class="text-sm text-zinc-400">Belum ada ticket terkait</span>
-                            @endforelse
-                        </dd>
-                    </div>
-                </dl>
-            </div>
-
-            {{-- Routing history --}}
-            @if ($ticket->transfers->isNotEmpty())
+            {{-- Related reports: only when there are some, or when the user can link one --}}
+            @if ($this->relations->isNotEmpty() || $can['relations'])
                 <div class="rounded-xl border border-zinc-200 bg-white p-5">
-                    <flux:heading size="lg" class="mb-3">Department history</flux:heading>
-                    <ol class="space-y-3">
+                    <div class="mb-3 flex items-center justify-between">
+                        <flux:heading size="lg">Related Reports</flux:heading>
+                        @if ($can['relations'])
+                            <flux:button size="sm" variant="ghost" icon="link" wire:click="openRelation">Link report</flux:button>
+                        @endif
+                    </div>
+                    <div class="space-y-2">
+                        @forelse ($this->relations as $relation)
+                            <div wire:key="rel-{{ $relation['id'] }}" class="flex items-center justify-between gap-3">
+                                @if ($relation['visible'])
+                                    <a href="{{ route('tickets.show', $relation['ticket']) }}" wire:navigate class="min-w-0">
+                                        <span class="font-mono text-xs text-zinc-500">{{ $relation['ticket']->number }} · {{ $relation['type'] }}</span>
+                                        <span class="block truncate text-sm font-medium text-zinc-800 hover:underline">{{ $relation['ticket']->title }}</span>
+                                    </a>
+                                @else
+                                    <span class="min-w-0 text-sm text-zinc-500">{{ $relation['ticket']->number }} · {{ $relation['type'] }} (terbatas)</span>
+                                @endif
+                                @if ($can['relations'])
+                                    <flux:button size="xs" variant="ghost" icon="x-mark" aria-label="Unlink"
+                                        x-on:click="hwConfirm({ title: 'Lepas hubungan report?', confirmText: 'Lepas', danger: true }).then(ok => ok && $wire.removeRelation({{ $relation['id'] }}))" />
+                                @endif
+                            </div>
+                        @empty
+                            <span class="text-sm text-zinc-400">Belum ada report terkait.</span>
+                        @endforelse
+                    </div>
+                </div>
+            @endif
+
+            {{-- History: routing between departments (secondary) --}}
+            @if ($ticket->transfers->isNotEmpty())
+                <details class="group rounded-xl border border-zinc-200 bg-white p-5">
+                    <summary class="flex cursor-pointer list-none items-center justify-between">
+                        <flux:heading size="lg">History</flux:heading>
+                        <span class="flex items-center gap-1 text-sm text-zinc-500">{{ $ticket->transfers->count() }} transfer <flux:icon.chevron-down variant="micro" class="transition group-open:rotate-180" /></span>
+                    </summary>
+                    <ol class="mt-3 space-y-3">
                         <li class="text-sm text-zinc-700">
-                            <span class="font-medium">{{ $ticket->transfers->first()->fromDepartment->name }}</span> menerima ticket pertama kali · {{ $ticket->created_at?->translatedFormat('d M Y H:i') }}
+                            <span class="font-medium">{{ $ticket->transfers->first()->fromDepartment->name }}</span> menerima report pertama kali · {{ $ticket->created_at?->translatedFormat('d M Y H:i') }}
                         </li>
                         @foreach ($ticket->transfers as $transfer)
                             <li wire:key="tr-{{ $transfer->id }}" class="text-sm text-zinc-700">
@@ -904,7 +933,7 @@ new class extends Component {
                             </li>
                         @endforeach
                     </ol>
-                </div>
+                </details>
             @endif
 
             <livewire:tickets.activity :ticket-id="$ticket->id" wire:key="activity-{{ $ticket->id }}" />
@@ -932,8 +961,8 @@ new class extends Component {
     <flux:modal name="ticket-resolve" class="w-full max-w-md">
         <form wire:submit="resolve" class="space-y-6">
             <div>
-                <flux:heading size="lg">Resolve Ticket</flux:heading>
-                <flux:text class="mt-1">Requester dapat menutup ticket atau membukanya kembali setelah ini.</flux:text>
+                <flux:heading size="lg">Resolve Report</flux:heading>
+                <flux:text class="mt-1">Pelapor dapat menutup report atau membukanya kembali setelah ini.</flux:text>
             </div>
             <flux:select wire:model.live="resolutionId" label="Resolution" badge="Required" placeholder="Pilih resolution">
                 @foreach ($this->options['resolutions'] as $option)
@@ -957,7 +986,7 @@ new class extends Component {
     <flux:modal name="ticket-reject" class="w-full max-w-md">
         <form wire:submit="reject" class="space-y-6">
             <div>
-                <flux:heading size="lg">Reject Ticket</flux:heading>
+                <flux:heading size="lg">Reject Report</flux:heading>
                 <flux:text class="mt-1">Gunakan bila request tidak valid. Requester akan melihat alasannya.</flux:text>
             </div>
             <flux:select wire:model="rejectReasonId" label="Reason" badge="Required" placeholder="Pilih alasan">
@@ -968,7 +997,7 @@ new class extends Component {
             <flux:textarea wire:model="rejectNotes" label="Notes" badge="Required" rows="3" />
             <div class="flex justify-end gap-2">
                 <flux:modal.close><flux:button variant="ghost">Back</flux:button></flux:modal.close>
-                <flux:button type="submit" variant="danger" wire:loading.attr="disabled" wire:target="reject">Reject Ticket</flux:button>
+                <flux:button type="submit" variant="danger" wire:loading.attr="disabled" wire:target="reject">Reject Report</flux:button>
             </div>
         </form>
     </flux:modal>
@@ -999,8 +1028,8 @@ new class extends Component {
         <flux:modal name="ticket-transfer" class="w-full max-w-md">
             <form wire:submit="transfer" class="space-y-6">
                 <div>
-                    <flux:heading size="lg">Transfer Ticket</flux:heading>
-                    <flux:text class="mt-1">PIC dan kolaborator saat ini dilepas; ticket masuk ke inbox department tujuan sebagai ticket baru.</flux:text>
+                    <flux:heading size="lg">Transfer Report</flux:heading>
+                    <flux:text class="mt-1">PIC dan kolaborator saat ini dilepas; report masuk ke inbox department tujuan sebagai report baru.</flux:text>
                 </div>
                 <div class="rounded-lg bg-zinc-50 px-4 py-3 text-sm">
                     <span class="text-zinc-500">From</span>
@@ -1018,7 +1047,7 @@ new class extends Component {
                 <flux:textarea wire:model="transferNotes" label="Notes" rows="3" />
                 <div class="flex justify-end gap-2">
                     <flux:modal.close><flux:button variant="ghost">Cancel</flux:button></flux:modal.close>
-                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="transfer">Transfer Ticket</flux:button>
+                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="transfer">Transfer Report</flux:button>
                 </div>
             </form>
         </flux:modal>
@@ -1063,9 +1092,9 @@ new class extends Component {
     @if ($can['relations'])
         <flux:modal name="ticket-relation" class="w-full max-w-md">
             <form wire:submit="addRelation" class="space-y-6">
-                <flux:heading size="lg">Link ticket</flux:heading>
+                <flux:heading size="lg">Link report</flux:heading>
                 <div>
-                    <livewire:tickets.picker wire:model="relatedTicketId" label="Ticket" :required="true" :exclude="[$ticket->id]" key="relation-ticket-picker" />
+                    <livewire:tickets.picker wire:model="relatedTicketId" label="Report" :required="true" :exclude="[$ticket->id]" key="relation-ticket-picker" />
                     <flux:error name="relatedTicketId" />
                 </div>
                 <flux:select wire:model="relationTypeId" label="Relation" badge="Required" placeholder="Pilih jenis hubungan">

@@ -117,7 +117,7 @@ new #[Title('My Approvals')] class extends Component {
         <x-ui.table-card>
             <x-ui.empty-state icon="check-badge"
                 :title="match ($section) { 'requested' => 'Tidak ada permintaan yang sedang berjalan.', 'completed' => 'Belum ada approval yang selesai.', default => 'Tidak ada approval yang menunggu Anda.' }"
-                description="Approval muncul di sini ketika sebuah aksi Project, Task, atau Ticket membutuhkan persetujuan." />
+                description="Approval muncul di sini ketika sebuah aksi Project, Task, atau Report membutuhkan persetujuan." />
         </x-ui.table-card>
     @else
         <x-ui.table-card class="hidden md:block">

@@ -181,10 +181,10 @@ class ProjectVisibilityTest extends TestCase
 
         $this->actingAs($manager);
 
-        $summary = Livewire::test('pages::dashboard')->instance()->summary;
-        $active = collect($summary)->firstWhere('label', 'Active Projects');
+        $panel = Livewire::test('pages::dashboard')->instance()->projectPanel;
 
-        $this->assertSame(1, $active['value']);
+        $this->assertSame('Managed Projects', $panel['title']);
+        $this->assertSame(['Mine'], $panel['projects']->pluck('name')->all());
         $this->actingAs($manager)->get(route('dashboard'))->assertSee('Mine')->assertDontSee('Hidden One');
     }
 

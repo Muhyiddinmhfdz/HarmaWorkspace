@@ -24,7 +24,7 @@ class TicketGuard
         $ticket->loadMissing('status');
 
         if ($ticket->status->is_terminal) {
-            throw new BusinessRuleException('Ticket sudah berakhir ('.$ticket->status->name.') dan tidak dapat diubah. Buka kembali (reopen) bila masih perlu ditangani.');
+            throw new BusinessRuleException('Laporan sudah berakhir ('.$ticket->status->name.') dan tidak dapat diubah. Buka kembali (reopen) bila masih perlu ditangani.');
         }
     }
 
@@ -37,7 +37,7 @@ class TicketGuard
         $this->ensureNotFinal($ticket);
 
         if ($ticket->status->counts_as_completed) {
-            throw new BusinessRuleException('Ticket sudah di-resolve. Buka kembali (reopen) bila masih perlu ditangani.');
+            throw new BusinessRuleException('Laporan sudah di-resolve. Buka kembali (reopen) bila masih perlu ditangani.');
         }
     }
 
@@ -107,7 +107,7 @@ class TicketGuard
             }
 
             if ($projectId !== $current?->project_id && ($project->isArchived() || $project->status->is_terminal)) {
-                throw new BusinessRuleException('Project '.$project->name.' sudah berakhir atau diarsipkan dan tidak menerima Ticket baru. Buat Ticket standalone bila masih ada kebutuhan support.');
+                throw new BusinessRuleException('Project '.$project->name.' sudah berakhir atau diarsipkan dan tidak menerima laporan baru. Buat laporan tanpa project bila masih ada kebutuhan support.');
             }
         }
 

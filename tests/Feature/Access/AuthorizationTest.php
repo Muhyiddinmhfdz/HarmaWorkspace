@@ -78,9 +78,15 @@ class AuthorizationTest extends TestCase
 
     public function test_sidebar_only_lists_permitted_modules(): void
     {
+        // Staff see operational work only; directory and administration pages
+        // stay out of their sidebar (Phase 6).
         $this->actingAs($this->staff())
             ->get(route('dashboard'))
-            ->assertSee(route('admin.departments.index'))
+            ->assertSee(route('tasks.mine'))
+            ->assertSee(route('tickets.index'))
+            ->assertDontSee(route('admin.departments.index'))
+            ->assertDontSee(route('master-data.index'))
+            ->assertDontSee(route('admin.workflows.index'))
             ->assertDontSee(route('admin.users.index'))
             ->assertDontSee(route('admin.roles.index'))
             ->assertDontSee(route('admin.audit.index'));

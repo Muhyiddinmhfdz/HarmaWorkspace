@@ -1,9 +1,22 @@
 # HarmaWorkspace Project Guidelines
 
-HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular monolith: Laravel 13, MySQL, Livewire 4, Flux UI free, Fortify, Spatie Permission + Activitylog). The architecture blueprint is `docs/phase-0-blueprint.md`; the implemented foundation, conventions and ADRs are in `docs/phase-1-foundation.md`, `docs/phase-2-project-management.md`, `docs/phase-3-task-management.md`, `docs/phase-4-ticketing.md` and `docs/phase-5-workflow-approval.md`. Read them before building a module.
+HarmaWorkspace is the internal work management system for HARMA DIGITAL (modular monolith: Laravel 13, MySQL, Livewire 4, Flux UI free, Fortify, Spatie Permission + Activitylog). The architecture blueprint is `docs/phase-0-blueprint.md`; the implemented foundation, conventions and ADRs are in `docs/phase-1-foundation.md`, `docs/phase-2-project-management.md`, `docs/phase-3-task-management.md`, `docs/phase-4-ticketing.md`, `docs/phase-5-workflow-approval.md` and `docs/phase-6-simplification-operational-ux.md`. Read them before building a module.
+
+## Simplicity first (Phase 6)
+- HarmaWorkspace is a work management tool for Project → Task → Report → Progress, not a Jira/ServiceNow/ERP/BPMN clone. Backend may be complex; the operational UI must stay simple.
+- Do not expose internal workflow complexity to operational users unless it directly helps them perform a task. No "Workflow Version", "Transition", "Weight Resolver", "Scope" or status codes on operational pages; say Action, Status, Review, Approval.
+- Tickets are called **Report(s)** in the operational UI (English labels; Indonesian messages say "Laporan"). The backend stays `Ticket` (model, table, permissions, events, routes, class names): never rename it.
+- Use progressive disclosure: important facts first, advanced metadata under "More Details" (`<details>`), "More options", a "More" tab, or the "…" action menu. One contextual primary action plus "More"; never rows of buttons. Hide empty panels (approval, resolution) until they are relevant.
+- Project detail keeps at most four primary tabs (Overview, Tasks, Reports, Activity). Lists show few columns with secondary info inside the main cell. Quick views: a few primary ones with counts, the rest under "More".
+- Navigation shows only what the user can actually use: no empty sections; administration and directory pages only for those who manage them. Global Create offers only New Project / New Task / New Report.
+- The dashboard is role-aware in one page (permission + contextual role), 4–6 summary cards, and "Needs Attention" comes from `App\Domain\System\Dashboard\NeedsAttention` (plain queries, no persisted state).
+- Every operational page must work at ~390px without horizontal overflow; keep the mobile bottom bar in `layouts/app/sidebar.blade.php` in sync with the main destinations.
+- Hiding UI is never authorization: keep policies, visibility scopes, WorkflowGate and the Approval Engine on every path.
+- Do not add a new business engine for UX needs; reuse existing scopes, flags and queries.
 
 ## Phase discipline
-- Work only on the current phase in `docs/phase-0-blueprint.md` §21. Do not build Project/Task/Ticket/Workflow/Approval/Gantt features ahead of their phase.
+- After Phase 6 the roadmap does not continue automatically: the app goes to an internal pilot, and the next feature is chosen from real pain points. Deadline Center, Calendar, Timeline, Gantt, Dependencies, Workload, Analytics, Notifications, SLA/Automation and PWA are deferred — do not build them unless explicitly requested.
+- Work only on the current phase in `docs/phase-0-blueprint.md` §21. Do not build features ahead of their phase.
 - `config/navigation.php` lists only modules that exist; add a module's entry in its own phase. Never create placeholder pages just to make a link work.
 
 ## Architecture

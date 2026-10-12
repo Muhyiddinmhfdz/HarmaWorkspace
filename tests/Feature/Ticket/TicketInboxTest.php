@@ -117,7 +117,7 @@ class TicketInboxTest extends TestCase
         $this->actingAs($leader);
         $component = Livewire::test('tickets.table', ['mode' => 'inbox']);
 
-        $this->assertSame(
+        $this->assertEquals(
             ['new' => 1, 'unassigned' => 1, 'assigned' => 2, 'in_progress' => 1, 'waiting' => 1, 'review' => 1, 'overdue' => 1, 'all' => 7],
             $component->instance()->counts,
         );

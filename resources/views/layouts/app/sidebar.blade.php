@@ -2,13 +2,19 @@
     $user = auth()->user();
     $navigation = app(\App\Domain\System\Navigation\Navigation::class)->for($user);
     $subtitle = app(\App\Domain\System\Settings\Settings::class)->get(\App\Domain\System\Settings\SettingKey::AppSubtitle);
+    // Global create keeps only the everyday actions; administrative records
+    // are created from their own pages.
     $createItems = array_values(array_filter([
-        $user->can('create', \App\Models\Task::class) ? ['label' => 'New Task', 'icon' => 'plus-circle', 'url' => route('tasks.create')] : null,
-        $user->can('create', \App\Models\Ticket::class) ? ['label' => 'New Ticket', 'icon' => 'ticket', 'url' => route('tickets.create')] : null,
         $user->can('project.create') ? ['label' => 'New Project', 'icon' => 'folder-plus', 'url' => route('projects.create')] : null,
-        $user->can('user.create') ? ['label' => 'New Member', 'icon' => 'user-plus', 'url' => route('admin.users.create')] : null,
-        $user->can('department.create') ? ['label' => 'New Department', 'icon' => 'building-office-2', 'url' => route('admin.departments.index', ['create' => 1])] : null,
-        $user->can('client.create') ? ['label' => 'New Client', 'icon' => 'briefcase', 'url' => route('clients.index', ['create' => 1])] : null,
+        $user->can('create', \App\Models\Task::class) ? ['label' => 'New Task', 'icon' => 'plus-circle', 'url' => route('tasks.create')] : null,
+        $user->can('create', \App\Models\Ticket::class) ? ['label' => 'New Report', 'icon' => 'chat-bubble-left-right', 'url' => route('tickets.create')] : null,
+    ]));
+    // Mobile bottom bar: the four daily destinations plus the full menu.
+    $mobileItems = array_values(array_filter([
+        $user->can('dashboard.view') ? ['label' => 'Dashboard', 'icon' => 'home', 'url' => route('dashboard'), 'current' => request()->routeIs('dashboard')] : null,
+        $user->canAny(['project.view', 'project.view-all']) ? ['label' => 'Projects', 'icon' => 'folder', 'url' => route('projects.index'), 'current' => request()->routeIs('projects.*')] : null,
+        $user->canAny(['task.view', 'task.view-all']) ? ['label' => 'My Tasks', 'icon' => 'check-circle', 'url' => route('tasks.mine'), 'current' => request()->routeIs('tasks.*')] : null,
+        $user->canAny(['ticket.view', 'ticket.view-all']) ? ['label' => 'Reports', 'icon' => 'lifebuoy', 'url' => route('tickets.mine'), 'current' => request()->routeIs('tickets.*')] : null,
     ]));
 @endphp
 <!DOCTYPE html>
@@ -64,20 +70,6 @@
             @endif
 
             <flux:dropdown position="bottom" align="end">
-                <flux:tooltip content="Notifications" position="bottom">
-                    <flux:button size="sm" variant="ghost" icon="bell" aria-label="Notifications" />
-                </flux:tooltip>
-
-                <flux:menu class="w-80">
-                    <div class="flex flex-col items-center px-4 py-8 text-center">
-                        <flux:icon.bell-slash class="mb-3 size-6 text-zinc-400" />
-                        <flux:heading>Belum ada notifikasi</flux:heading>
-                        <flux:text class="mt-1">Notifikasi pekerjaan akan muncul di sini setelah modul Project, Task, dan Ticket aktif.</flux:text>
-                    </div>
-                </flux:menu>
-            </flux:dropdown>
-
-            <flux:dropdown position="bottom" align="end">
                 <flux:profile :initials="$user->initials()" icon-trailing="chevron-down" data-test="profile-menu-button" />
 
                 <flux:menu>
@@ -107,6 +99,22 @@
         </flux:header>
 
         {{ $slot }}
+
+        <nav class="fixed inset-x-0 bottom-0 z-20 border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Mobile navigation">
+            <div class="mx-auto flex max-w-md items-stretch justify-around">
+                @foreach ($mobileItems as $mobileItem)
+                    <a href="{{ $mobileItem['url'] }}" wire:navigate @if ($mobileItem['current']) aria-current="page" @endif
+                       @class(['flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium', 'text-zinc-900' => $mobileItem['current'], 'text-zinc-500' => ! $mobileItem['current']])>
+                        <flux:icon :icon="$mobileItem['icon']" :variant="$mobileItem['current'] ? 'solid' : 'outline'" class="size-5" />
+                        {{ $mobileItem['label'] }}
+                    </a>
+                @endforeach
+                <button type="button" x-data x-on:click="$dispatch('flux-sidebar-toggle')" class="flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-zinc-500" aria-label="Open menu">
+                    <flux:icon.bars-3 class="size-5" />
+                    More
+                </button>
+            </div>
+        </nav>
 
         @php
             $flash = session('notify') ?? ($errors->has('business') ? ['type' => 'error', 'message' => $errors->first('business')] : null);

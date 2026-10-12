@@ -273,10 +273,10 @@ class DefaultWorkflowBlueprint
             'send_to_review' => 'Send to Review',
             'request_revision' => 'Request Revision',
             'resolve' => 'Resolve',
-            'close' => 'Close Ticket',
+            'close' => 'Close Report',
             'reopen' => 'Reopen',
-            'reject' => 'Reject Ticket',
-            'cancel' => 'Cancel Ticket',
+            'reject' => 'Reject Report',
+            'cancel' => 'Cancel Report',
             default => 'Move to '.$to->name,
         };
 

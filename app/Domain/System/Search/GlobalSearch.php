@@ -11,7 +11,8 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 
 /**
- * Global search across the modules available so far. Each source is only
+ * Global search: Projects, Tasks and Reports (tickets) first, then the
+ * directory groups the user may view. Each source is only
  * searched when the user may view it, and uses the same visibility rules as
  * the module's list page, so hidden records never appear in results.
  */
@@ -72,7 +73,7 @@ class GlobalSearch
 
         if ($user->can('viewAny', Ticket::class)) {
             $results[] = [
-                'group' => 'Tickets',
+                'group' => 'Reports',
                 'items' => array_values(Ticket::query()
                     ->visibleTo($user)
                     ->where(fn (Builder $query) => $query

@@ -1286,6 +1286,8 @@ Route model binding untuk project/task/ticket memakai `id`. Lookup via nomor (`T
 
 ## 21. Development Roadmap
 
+> Revisi Phase 6: setelah Phase 5, roadmap tidak otomatis berlanjut. Phase 6 menjadi *Simplification & Operational UX*, diikuti **pilot internal**. Fase berikutnya hanya dibangun bila pilot menunjukkan kebutuhan nyata (*build only what HARMA actually needs*).
+
 | Fase | Fokus | Deliverable utama | Prasyarat |
 |---|---|---|---|
 | **0 — Analysis** | Blueprint | Dokumen ini, disetujui | — |
@@ -1294,13 +1296,15 @@ Route model binding untuk project/task/ticket memakai `id`. Lookup via nomor (`T
 | **3 — Task** | Eksekusi | Task, subtask (1 level), checklist, main PIC + collaborator + history, dependency, estimated hours, status history, My Tasks, board | 2 |
 | **4 — Ticket** | Helpdesk | Ticket (standalone/project/task), Department Inbox, assignment & transfer, resolution, My Tickets, numbering TCK, workflow default sederhana | 1 (opsional 2, 3) |
 | **5 — Workflow & Approval** | Konfigurasi proses | Workflow builder (version/state/transition/rule), approval template & engine, My Approvals, self-approval guard | 4 |
-| **6 — Deadline & Timeline** | Waktu | Deadline Center, timeline (project/department/user), calendar, approval untuk perubahan jadwal, notifikasi deadline, preferensi notifikasi | 3, 5 |
-| **7 — Gantt** | Visual schedule | Gantt project (baseline vs current, dependency, milestone), re-baseline | 6 |
-| **8 — Dashboard & Workload** | Insight harian | Dashboard per peran, workload (kapasitas vs alokasi), project health | 3, 4, 6 |
-| **9 — Reports** | Analitik | Report project/task/ticket/performance, export | 8 |
-| **10 — Automation** | Efisiensi | SLA ticket, auto-close resolved, reminder, rule otomatis sederhana | 5, 9 |
-| **11 — PWA** | Mobile web | Manifest, service worker, installable, push notification, bottom nav | 8 |
-| **12 — Mobile** | Native app | REST API v1 (Sanctum) di atas Domain Action yang sama, aplikasi mobile | 11 |
+| **6 — Simplification & Operational UX** | Kesederhanaan | Navigasi ringkas, Project Workspace (4 tab), Task/Report UX, terminologi Report, dashboard role-aware, progressive disclosure, mobile — tanpa engine baru (lihat `docs/phase-6-simplification-operational-ux.md`) | 5 |
+| **Pilot** | Pemakaian nyata | Pilot internal HARMA DIGITAL, kumpulkan pain point, baru pilih fitur berikutnya | 6 |
+| ~~Deadline & Timeline~~ — **Deferred** | Waktu | Deadline Center, timeline (project/department/user), calendar, approval untuk perubahan jadwal, notifikasi deadline, preferensi notifikasi. Ditunda (bukan dibatalkan) sampai pilot menunjukkan kebutuhan nyata. | Pilot |
+| **7 — Gantt** *(Deferred)* | Visual schedule | Gantt project (baseline vs current, dependency, milestone), re-baseline | Pilot |
+| **8 — Dashboard & Workload** *(Deferred; dashboard role-aware dasar dikerjakan di Phase 6)* | Insight harian | Workload (kapasitas vs alokasi), project health lanjutan | Pilot |
+| **9 — Reports & Analytics** *(Deferred)* | Analitik | Report project/task/ticket/performance, export | 8 |
+| **10 — Automation** *(Deferred)* | Efisiensi | SLA ticket, auto-close resolved, reminder, rule otomatis sederhana | 5, 9 |
+| **11 — PWA** *(Deferred)* | Mobile web | Manifest, service worker, installable, push notification, bottom nav | 8 |
+| **12 — Mobile** *(Deferred)* | Native app | REST API v1 (Sanctum) di atas Domain Action yang sama, aplikasi mobile | 11 |
 
 ### 21.1 Urutan Implementasi Phase 1
 

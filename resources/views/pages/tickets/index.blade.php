@@ -4,7 +4,7 @@ use App\Models\Ticket;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Title('Tickets')] class extends Component {
+new #[Title('Reports')] class extends Component {
     public function mount(): void
     {
         $this->authorize('viewAny', Ticket::class);
@@ -12,7 +12,7 @@ new #[Title('Tickets')] class extends Component {
 }; ?>
 
 <div class="mx-auto w-full max-w-7xl">
-    <x-ui.page-header title="Tickets" description="Semua ticket yang dapat Anda lihat, dari yang paling perlu ditindaklanjuti." />
+    <x-ui.page-header title="Reports" description="Bug, maintenance, request, issue, dan catatan pekerjaan yang dapat Anda lihat." />
 
     <livewire:tickets.table mode="all" />
 </div>

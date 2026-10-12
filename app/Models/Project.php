@@ -191,6 +191,28 @@ class Project extends Model
     }
 
     /**
+     * Tasks of the project. Read-only relation for summaries; task changes go
+     * through app/Domain/Task/Actions.
+     *
+     * @return HasMany<Task, $this>
+     */
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(Task::class);
+    }
+
+    /**
+     * Tickets (reports) linked to the project. Ticket visibility is
+     * independent from project visibility: always scope with visibleTo().
+     *
+     * @return HasMany<Ticket, $this>
+     */
+    public function tickets(): HasMany
+    {
+        return $this->hasMany(Ticket::class);
+    }
+
+    /**
      * @return MorphMany<ScheduleChange, $this>
      */
     public function scheduleChanges(): MorphMany

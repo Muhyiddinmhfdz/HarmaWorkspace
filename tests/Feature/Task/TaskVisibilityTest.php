@@ -91,9 +91,10 @@ class TaskVisibilityTest extends TestCase
         Livewire::test('tasks.table', ['mode' => 'all'])->set('quick', 'all')->assertSee('Visible task')->assertDontSee('Hidden task');
         Livewire::test('tasks.table', ['mode' => 'mine'])->assertSee('Visible task')->assertDontSee('Hidden task');
 
-        $cards = collect(Livewire::test('pages::dashboard')->instance()->taskCards)->keyBy('label');
+        $dashboard = Livewire::test('pages::dashboard')->instance();
+        $cards = collect($dashboard->workCards)->keyBy('label');
         $this->assertSame(1, $cards['My Open Tasks']['value']);
-        $this->assertSame(1, $cards['Overdue']['value']);
+        $this->assertSame(['Visible task'], collect($dashboard->attention)->where('label', 'Overdue Task')->pluck('title')->all());
     }
 
     public function test_project_tab_lists_only_tasks_of_that_project(): void

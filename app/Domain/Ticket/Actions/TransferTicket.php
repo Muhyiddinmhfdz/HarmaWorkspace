@@ -40,7 +40,7 @@ class TransferTicket
             $this->guard->ensureActive($ticket);
 
             if ($ticket->current_department_id === $target->id) {
-                throw new BusinessRuleException('Ticket sudah berada di Department '.$target->name.'.');
+                throw new BusinessRuleException('Laporan sudah berada di Department '.$target->name.'.');
             }
 
             $from = $ticket->currentDepartment;

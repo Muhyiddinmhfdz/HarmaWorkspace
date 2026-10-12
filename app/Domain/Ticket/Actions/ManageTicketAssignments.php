@@ -99,11 +99,11 @@ class ManageTicketAssignments
             $current = $ticket->picAssignment()->with('user:id,name')->first();
 
             if (! $expectPic && $current !== null) {
-                throw new BusinessRuleException('Ticket sudah ditugaskan ke '.$current->user->name.' oleh pengguna lain. Muat ulang data terbaru.');
+                throw new BusinessRuleException('Laporan sudah ditugaskan ke '.$current->user->name.' oleh pengguna lain. Muat ulang data terbaru.');
             }
 
             if ($expectPic && $current === null) {
-                throw new BusinessRuleException('Ticket belum memiliki PIC. Muat ulang data terbaru.');
+                throw new BusinessRuleException('Laporan belum memiliki PIC. Muat ulang data terbaru.');
             }
 
             if ($current?->user_id === $user->id) {

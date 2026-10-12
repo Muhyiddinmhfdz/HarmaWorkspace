@@ -29,11 +29,11 @@ class ManageTicketRelations
         $related = Ticket::query()->find($relatedTicketId);
 
         if ($related === null || ! $related->isVisibleTo($actor)) {
-            throw new BusinessRuleException('Ticket yang dipilih tidak ditemukan atau tidak dapat Anda akses.');
+            throw new BusinessRuleException('Laporan yang dipilih tidak ditemukan atau tidak dapat Anda akses.');
         }
 
         if ($related->id === $ticket->id) {
-            throw new BusinessRuleException('Ticket tidak dapat dihubungkan dengan dirinya sendiri.');
+            throw new BusinessRuleException('Laporan tidak dapat dihubungkan dengan dirinya sendiri.');
         }
 
         $exists = TicketRelation::query()
@@ -42,7 +42,7 @@ class ManageTicketRelations
             ->exists();
 
         if ($exists) {
-            throw new BusinessRuleException('Ticket '.$related->number.' sudah terhubung dengan ticket ini.');
+            throw new BusinessRuleException('Laporan '.$related->number.' sudah terhubung dengan laporan ini.');
         }
 
         $relation = TicketRelation::query()->create([

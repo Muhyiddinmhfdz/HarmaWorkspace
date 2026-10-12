@@ -137,7 +137,7 @@ new class extends Component {
             );
         });
 
-        $this->notifyAfterRedirect('success', 'Ticket berhasil diperbarui.');
+        $this->notifyAfterRedirect('success', 'Laporan berhasil diperbarui.');
         $this->redirectRoute('tickets.show', $ticket, navigate: true);
     }
 
@@ -151,7 +151,7 @@ new class extends Component {
     <x-ui.page-header :title="'Edit '.$this->ticket->number" :description="$this->ticket->title">
         <x-slot:breadcrumbs>
             <flux:breadcrumbs>
-                <flux:breadcrumbs.item :href="route('tickets.index')" wire:navigate>Tickets</flux:breadcrumbs.item>
+                <flux:breadcrumbs.item :href="route('tickets.index')" wire:navigate>Reports</flux:breadcrumbs.item>
                 <flux:breadcrumbs.item :href="route('tickets.show', $this->ticket)" wire:navigate>{{ $this->ticket->number }}</flux:breadcrumbs.item>
                 <flux:breadcrumbs.item>Edit</flux:breadcrumbs.item>
             </flux:breadcrumbs>
@@ -159,7 +159,7 @@ new class extends Component {
     </x-ui.page-header>
 
     <form wire:submit="save" class="rounded-xl border border-zinc-200 bg-white p-6 sm:p-8">
-        <x-ui.form-section title="General" description="Informasi utama ticket.">
+        <x-ui.form-section title="General" description="Informasi utama report.">
             <flux:input wire:model="title" label="Title" badge="Required" maxlength="200" />
             <flux:textarea wire:model="description" label="Description" badge="Required" rows="5" />
             <div class="grid gap-4 sm:grid-cols-2">
@@ -211,8 +211,8 @@ new class extends Component {
             </div>
         </x-ui.form-section>
 
-        <x-ui.form-section title="Status, Assignment & Deadline" description="Diatur dari halaman ticket agar riwayatnya tercatat.">
-            <flux:text>Status, PIC, kolaborator, department, priority, dan deadline diubah langsung dari halaman detail ticket.</flux:text>
+        <x-ui.form-section title="Status, Assignment & Deadline" description="Diatur dari halaman report agar riwayatnya tercatat.">
+            <flux:text>Status, PIC, kolaborator, department, priority, dan deadline diubah langsung dari halaman detail report.</flux:text>
         </x-ui.form-section>
 
         <div class="flex justify-end gap-2 pt-2">

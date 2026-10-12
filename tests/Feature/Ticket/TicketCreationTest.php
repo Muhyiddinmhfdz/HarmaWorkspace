@@ -58,7 +58,9 @@ class TicketCreationTest extends TestCase
     {
         $this->actingAs($this->staff());
 
+        // A single active category is preselected; clearing it must still fail.
         Livewire::test('pages::tickets.create')
+            ->set('ticket_category_id', '')
             ->call('save')
             ->assertHasErrors(['title' => 'required', 'ticket_type_id' => 'required', 'ticket_category_id' => 'required', 'current_department_id' => 'required', 'description' => 'required']);
     }

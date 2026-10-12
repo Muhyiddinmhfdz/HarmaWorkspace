@@ -23,18 +23,22 @@ class DashboardTest extends TestCase
         $response->assertOk();
     }
 
-    public function test_dashboard_shows_only_permitted_summary_cards(): void
+    public function test_dashboard_is_role_aware(): void
     {
         $this->actingAs($this->staff())
             ->get(route('dashboard'))
-            ->assertSee('Departments')
-            ->assertDontSee('Active Members')
-            ->assertDontSee('Recent Activity');
+            ->assertSee('My Work')
+            ->assertSee('My Open Tasks')
+            ->assertSee('Needs Attention')
+            ->assertDontSee('Company Overview')
+            ->assertDontSee('Projects At Risk');
 
         $this->actingAs($this->superAdmin())
             ->get(route('dashboard'))
-            ->assertSee('Active Members')
-            ->assertSee('Recent Activity');
+            ->assertSee('Company Overview')
+            ->assertSee('Active Projects')
+            ->assertSee('Projects At Risk')
+            ->assertSee('Project Progress');
     }
 
     public function test_user_without_dashboard_permission_is_forbidden(): void

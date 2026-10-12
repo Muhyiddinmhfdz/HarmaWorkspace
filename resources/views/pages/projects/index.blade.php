@@ -308,11 +308,8 @@ new #[Title('Projects')] class extends Component {
             <flux:table :paginate="$this->projects" class="[&_[data-flux-column]:first-child]:ps-5 [&_[data-flux-cell]:first-child]:ps-5 [&_[data-flux-column]:last-child]:pe-5 [&_[data-flux-cell]:last-child]:pe-5" pagination:class="px-5 pb-3">
                 <flux:table.columns>
                     <flux:table.column sortable :sorted="$sortBy === 'name'" :direction="$sortDirection" wire:click="sort('name')">Project</flux:table.column>
-                    <flux:table.column class="max-xl:hidden">Client</flux:table.column>
-                    <flux:table.column class="max-lg:hidden">Project Manager</flux:table.column>
-                    <flux:table.column class="max-xl:hidden">Lead Department</flux:table.column>
+                    <flux:table.column class="max-lg:hidden">PM</flux:table.column>
                     <flux:table.column>Status</flux:table.column>
-                    <flux:table.column>Health</flux:table.column>
                     <flux:table.column sortable :sorted="$sortBy === 'progress'" :direction="$sortDirection" wire:click="sort('progress')" class="w-32">Progress</flux:table.column>
                     <flux:table.column sortable :sorted="$sortBy === 'deadline'" :direction="$sortDirection" wire:click="sort('deadline')">Deadline</flux:table.column>
                     <flux:table.column align="end"><span class="sr-only">Actions</span></flux:table.column>
@@ -320,18 +317,25 @@ new #[Title('Projects')] class extends Component {
                 <flux:table.rows>
                     @foreach ($this->projects as $project)
                         <flux:table.row :key="$project->id" class="cursor-pointer hover:bg-zinc-50" x-data x-on:click="Livewire.navigate('{{ route('projects.show', $project) }}')">
-                            <flux:table.cell class="max-w-72">
+                            <flux:table.cell class="max-w-96">
                                 <div class="font-mono text-xs text-zinc-500">{{ $project->number }}</div>
                                 <a href="{{ route('projects.show', $project) }}" wire:navigate class="block truncate font-medium text-zinc-900 hover:underline" x-on:click.stop>{{ $project->name }}</a>
+                                <div class="truncate text-xs text-zinc-500">
+                                    {{ $project->client->name ?? 'Internal Project' }}{{ $project->leadDepartment ? ' • '.$project->leadDepartment->department->name : '' }}
+                                </div>
                                 @if ($project->isArchived())
                                     <flux:badge size="sm" color="zinc" class="mt-1">Archived</flux:badge>
                                 @endif
                             </flux:table.cell>
-                            <flux:table.cell class="max-xl:hidden">{{ $project->client->name ?? 'Internal Project' }}</flux:table.cell>
                             <flux:table.cell class="max-lg:hidden">{{ $project->projectManager->name }}</flux:table.cell>
-                            <flux:table.cell class="max-xl:hidden">{{ $project->leadDepartment?->department->name ?? '—' }}</flux:table.cell>
-                            <flux:table.cell><x-ui.master-badge :master="$project->status" /></flux:table.cell>
-                            <flux:table.cell><x-ui.master-badge :master="$project->health" /></flux:table.cell>
+                            <flux:table.cell>
+                                <div class="flex flex-col items-start gap-1">
+                                    <x-ui.master-badge :master="$project->status" />
+                                    @if ($project->health && ! $project->health->is_default)
+                                        <x-ui.master-badge :master="$project->health" />
+                                    @endif
+                                </div>
+                            </flux:table.cell>
                             <flux:table.cell><x-ui.progress-bar :value="$project->progress_percentage" /></flux:table.cell>
                             <flux:table.cell><x-ui.deadline :date="$project->current_end" :done="$project->completed_at !== null" compact /></flux:table.cell>
                             <flux:table.cell align="end">
@@ -372,11 +376,14 @@ new #[Title('Projects')] class extends Component {
                         <div class="min-w-0">
                             <div class="font-mono text-xs text-zinc-500">{{ $project->number }}</div>
                             <div class="truncate font-medium text-zinc-900">{{ $project->name }}</div>
+                            <div class="truncate text-xs text-zinc-500">{{ $project->client->name ?? 'Internal Project' }}</div>
                         </div>
-                        <x-ui.master-badge :master="$project->health" />
+                        <x-ui.master-badge :master="$project->status" class="shrink-0" />
                     </div>
                     <div class="mt-3 flex flex-wrap items-center gap-2">
-                        <x-ui.master-badge :master="$project->status" />
+                        @if ($project->health && ! $project->health->is_default)
+                            <x-ui.master-badge :master="$project->health" />
+                        @endif
                         <span class="text-xs text-zinc-500">PM: {{ $project->projectManager->name }}</span>
                     </div>
                     <x-ui.progress-bar :value="$project->progress_percentage" class="mt-3" />

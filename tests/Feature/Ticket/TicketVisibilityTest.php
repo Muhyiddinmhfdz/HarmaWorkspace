@@ -87,12 +87,12 @@ class TicketVisibilityTest extends TestCase
         $hidden = $this->createTicket(['title' => 'Printer gudang rusak']);
 
         $results = app(GlobalSearch::class)->search($visible->requester, 'Printer');
-        $tickets = collect($results)->firstWhere('group', 'Tickets');
+        $tickets = collect($results)->firstWhere('group', 'Reports');
 
         $this->assertNotNull($tickets);
         $this->assertSame(['Printer kasir rusak'], array_column($tickets['items'], 'title'));
         $this->assertStringContainsString($visible->number, $tickets['items'][0]['subtitle']);
-        $this->assertNull(collect(app(GlobalSearch::class)->search($this->staff(), 'Printer'))->firstWhere('group', 'Tickets'));
+        $this->assertNull(collect(app(GlobalSearch::class)->search($this->staff(), 'Printer'))->firstWhere('group', 'Reports'));
         $this->assertNotSame($visible->id, $hidden->id);
     }
 
@@ -104,9 +104,9 @@ class TicketVisibilityTest extends TestCase
         $this->createTicket([], $this->staff());
 
         $this->actingAs($requester);
-        $cards = collect(Livewire::test('pages::dashboard')->instance()->ticketCards)->keyBy('label');
+        $cards = collect(Livewire::test('pages::dashboard')->instance()->workCards)->keyBy('label');
 
-        $this->assertSame(2, $cards['My Open Tickets']['value']);
+        $this->assertSame(2, $cards['My Open Reports']['value']);
     }
 
     public function test_leader_dashboard_shows_inbox_of_led_department(): void

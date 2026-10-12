@@ -25,10 +25,13 @@ use Livewire\Component;
 use Livewire\WithPagination;
 
 /**
- * Shared ticket list: global list (all), My Tickets (mine), project Tickets
- * tab (project) and the Department Inbox work queue (inbox). Every query
- * starts from Ticket::visibleTo() via TicketQueue, which also produces all
- * quick-view counters in one aggregate query.
+ * Shared report (ticket) list: Reports (all), My Reports (mine), the project
+ * Reports tab (project) and the Department Inbox work queue (inbox). Every
+ * query starts from Ticket::visibleTo() via TicketQueue, which also produces
+ * all quick-view counters in one aggregate query.
+ *
+ * Phase 6: "Report" in the UI (backend stays Ticket), a few primary views
+ * per mode with the rest under "More", and compact columns per mode.
  */
 new class extends Component {
     use WithFeedback, WithPagination;
@@ -127,17 +130,38 @@ new class extends Component {
     }
 
     /**
-     * Quick views per mode (key => label).
+     * Quick views per mode (key => label): primary views first.
      *
      * @return array<string, string>
      */
     private function definitions(): array
     {
+        return $this->primaryDefinitions() + $this->moreDefinitions();
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function primaryDefinitions(): array
+    {
         return match ($this->mode) {
-            'mine' => ['waiting_for_me' => 'Waiting for Me', 'assigned_to_me' => 'Assigned to Me', 'requested' => 'Requested by Me', 'collaborating' => 'Collaborating', 'my_resolved' => 'Resolved', 'my_closed' => 'Closed'],
-            'project' => ['open' => 'Open', 'in_progress' => 'In Progress', 'waiting' => 'Waiting', 'resolved' => 'Resolved', 'all' => 'All'],
-            'inbox' => ['new' => 'New', 'unassigned' => 'Unassigned', 'assigned' => 'Assigned', 'in_progress' => 'In Progress', 'waiting' => 'Waiting', 'review' => 'Review', 'overdue' => 'Overdue', 'all' => 'All'],
-            default => ['open' => 'Open', 'mine' => 'My Tickets', 'unassigned' => 'Unassigned', 'in_progress' => 'In Progress', 'waiting' => 'Waiting', 'review' => 'Review', 'overdue' => 'Overdue', 'resolved' => 'Resolved', 'closed' => 'Closed', 'all' => 'All'],
+            'mine' => ['waiting_for_me' => 'Waiting for Me', 'assigned_to_me' => 'Assigned to Me', 'requested' => 'Reported by Me', 'my_resolved' => 'Recently Resolved'],
+            'project' => ['open' => 'Open', 'in_progress' => 'In Progress', 'waiting' => 'Waiting', 'resolved' => 'Resolved'],
+            'inbox' => ['new' => 'New', 'unassigned' => 'Unassigned', 'in_progress' => 'In Progress', 'waiting' => 'Waiting', 'review' => 'Review'],
+            default => ['open' => 'Open', 'mine' => 'My Reports', 'in_progress' => 'In Progress', 'waiting' => 'Waiting', 'review' => 'Review'],
+        };
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function moreDefinitions(): array
+    {
+        return match ($this->mode) {
+            'mine' => ['collaborating' => 'Collaborating', 'my_closed' => 'Closed'],
+            'project' => ['all' => 'All'],
+            'inbox' => ['overdue' => 'Overdue', 'assigned' => 'Assigned', 'all' => 'All'],
+            default => ['unassigned' => 'Unassigned', 'overdue' => 'Overdue', 'resolved' => 'Resolved', 'closed' => 'Closed', 'all' => 'All'],
         };
     }
 
@@ -224,8 +248,8 @@ new class extends Component {
     }
 
     /**
-     * Quick views with real counts; empty views (except defaults and the
-     * selected one) are hidden in the global list.
+     * Primary quick views with real counts. Overdue joins the primary views
+     * of the inbox only when something is overdue.
      *
      * @return list<array{key: string, label: string, count: int}>
      */
@@ -234,11 +258,31 @@ new class extends Component {
     {
         $views = [];
 
-        foreach ($this->definitions() as $key => $label) {
-            $count = $this->counts[$key] ?? 0;
+        foreach ($this->primaryDefinitions() as $key => $label) {
+            $views[] = ['key' => $key, 'label' => $label, 'count' => $this->counts[$key] ?? 0];
+        }
 
-            if ($this->mode !== 'all' || $count > 0 || in_array($key, ['open', 'all', $this->quick], true)) {
-                $views[] = ['key' => $key, 'label' => $label, 'count' => $count];
+        if ($this->mode === 'inbox' && ($this->counts['overdue'] ?? 0) > 0) {
+            $views[] = ['key' => 'overdue', 'label' => 'Overdue', 'count' => $this->counts['overdue']];
+        }
+
+        return $views;
+    }
+
+    /**
+     * Secondary views under "More" (with counts, same aggregate query).
+     *
+     * @return list<array{key: string, label: string, count: int}>
+     */
+    #[Computed]
+    public function moreViews(): array
+    {
+        $primary = array_column($this->quickViews, 'key');
+        $views = [];
+
+        foreach ($this->moreDefinitions() as $key => $label) {
+            if (! in_array($key, $primary, true)) {
+                $views[] = ['key' => $key, 'label' => $label, 'count' => $this->counts[$key] ?? 0];
             }
         }
 
@@ -262,6 +306,7 @@ new class extends Component {
                 'currentDepartment:id,name',
                 'requester:id,name',
                 'picAssignment.user:id,name',
+                'project:id,name',
             ]);
 
         $queue->apply($query, $this->quick, $user);
@@ -297,6 +342,25 @@ new class extends Component {
         }
 
         return $query->paginate(15);
+    }
+
+    /**
+     * Names of the related projects on the current page the user may see
+     * (ticket visibility is independent from project visibility; hidden
+     * projects are not named). One query per page.
+     *
+     * @return array<int, string>
+     */
+    #[Computed]
+    public function visibleProjectNames(): array
+    {
+        $ids = $this->tickets->getCollection()->pluck('project_id')->filter()->unique()->values()->all();
+
+        if ($ids === [] || $this->mode === 'project') {
+            return [];
+        }
+
+        return Project::query()->visibleTo(auth()->user())->whereIn('id', $ids)->pluck('name', 'id')->all();
     }
 
     /**
@@ -347,7 +411,7 @@ new class extends Component {
 
         $acceptTicket->handle($ticket, auth()->user());
 
-        $this->notify('success', 'Ticket '.$ticket->number.' berhasil diterima.');
+        $this->notify('success', 'Laporan '.$ticket->number.' berhasil diterima.');
         $this->refreshList();
     }
 
@@ -372,7 +436,7 @@ new class extends Component {
         $name = User::query()->whereKey($this->assignUserId)->value('name');
 
         Flux::modal('ticket-quick-assign-'.$this->getId())->close();
-        $this->notify('success', 'Ticket berhasil ditugaskan ke '.$name.'.');
+        $this->notify('success', 'Laporan berhasil ditugaskan ke '.$name.'.');
         $this->refreshList();
     }
 
@@ -391,7 +455,7 @@ new class extends Component {
 
     private function refreshList(): void
     {
-        unset($this->tickets, $this->counts, $this->quickViews);
+        unset($this->tickets, $this->counts, $this->quickViews, $this->moreViews, $this->visibleProjectNames);
     }
 }; ?>
 
@@ -409,31 +473,52 @@ new class extends Component {
         </div>
     @endif
 
-    {{-- Quick views --}}
-    <div class="-mx-4 mb-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
-        <nav class="flex min-w-max gap-1 border-b border-zinc-200" aria-label="Ticket views">
+    {{-- Quick views: primary with counts, the rest under More --}}
+    <div class="mb-4 flex items-end gap-1 border-b border-zinc-200">
+        <nav class="-mb-px flex min-w-0 flex-1 gap-1 overflow-x-auto" aria-label="Report views">
             @foreach ($this->quickViews as $view)
                 <button type="button" wire:key="tqv-{{ $view['key'] }}" wire:click="$set('quick', '{{ $view['key'] }}')"
                     @class([
-                        '-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap',
+                        'flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap',
                         'border-accent text-zinc-900' => $quick === $view['key'],
                         'border-transparent text-zinc-500 hover:text-zinc-800' => $quick !== $view['key'],
-                    ])>
+                    ])
+                    @if ($quick === $view['key']) aria-current="true" @endif>
                     {{ $view['label'] }}
                     <span @class(['rounded-full px-1.5 text-xs tabular-nums', 'bg-zinc-900 text-white' => $quick === $view['key'], 'bg-zinc-100 text-zinc-600' => $quick !== $view['key']])>{{ $view['count'] }}</span>
                 </button>
             @endforeach
         </nav>
+        @if ($this->moreViews !== [])
+            @php($moreSelected = collect($this->moreViews)->firstWhere('key', $quick))
+            <flux:dropdown position="bottom" align="end">
+                <button type="button" @class([
+                    '-mb-px flex shrink-0 items-center gap-1 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap',
+                    'border-accent text-zinc-900' => $moreSelected !== null,
+                    'border-transparent text-zinc-500 hover:text-zinc-800' => $moreSelected === null,
+                ])>
+                    {{ $moreSelected['label'] ?? 'More' }}
+                    <flux:icon.chevron-down variant="micro" />
+                </button>
+                <flux:menu>
+                    @foreach ($this->moreViews as $view)
+                        <flux:menu.item wire:key="tmv-{{ $view['key'] }}" wire:click="$set('quick', '{{ $view['key'] }}')">
+                            <span class="flex w-full items-center justify-between gap-6">{{ $view['label'] }} <span class="text-xs tabular-nums text-zinc-500">{{ $view['count'] }}</span></span>
+                        </flux:menu.item>
+                    @endforeach
+                </flux:menu>
+            </flux:dropdown>
+        @endif
     </div>
 
     {{-- Search & filters --}}
     <div class="mb-4 space-y-3">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
             <div class="w-full sm:max-w-sm">
-                <flux:input wire:model.live.debounce.300ms="search" icon="magnifying-glass" placeholder="Search number, title, client, requester..." clearable aria-label="Search tickets" />
+                <flux:input wire:model.live.debounce.300ms="search" icon="magnifying-glass" placeholder="Search number, title, client, requester..." clearable aria-label="Search reports" />
             </div>
             <flux:button icon="adjustments-horizontal" wire:click="$toggle('showFilters')" :variant="$showFilters ? 'filled' : 'outline'">
-                More filters
+                More Filters
                 @if ($this->activeFilterCount() > 0)
                     <flux:badge size="sm" color="indigo" class="ms-1">{{ $this->activeFilterCount() }}</flux:badge>
                 @endif
@@ -444,7 +529,7 @@ new class extends Component {
             <flux:spacer />
             @can('create', App\Models\Ticket::class)
                 @if (! $this->project || (! $this->project->isArchived() && ! $this->project->status->is_terminal))
-                    <flux:button variant="primary" icon="plus" :href="route('tickets.create', $projectId ? ['project' => $projectId] : [])" wire:navigate>New Ticket</flux:button>
+                    <flux:button variant="primary" icon="plus" :href="route('tickets.create', $projectId ? ['project' => $projectId] : [])" wire:navigate>New Report</flux:button>
                 @endif
             @endcan
         </div>
@@ -517,41 +602,50 @@ new class extends Component {
     @if ($this->tickets->isEmpty())
         <x-ui.table-card>
             @if ($search !== '' || $this->activeFilterCount() > 0)
-                <x-ui.empty-state icon="magnifying-glass" title="Tidak ada ticket yang cocok" description="Coba ubah kata kunci atau filter.">
+                <x-ui.empty-state icon="magnifying-glass" title="Tidak ada report yang cocok" description="Coba ubah kata kunci atau filter.">
                     <flux:button size="sm" wire:click="resetFilters">Reset filter</flux:button>
                 </x-ui.empty-state>
             @elseif ($mode === 'inbox' && $quick === 'new')
-                <x-ui.empty-state icon="inbox" title="Tidak ada Ticket baru." description="Semua request untuk Department ini sudah ditangani." />
+                <x-ui.empty-state icon="inbox" title="Tidak ada Report baru." description="Semua report untuk Department ini sudah diterima." />
             @elseif ($mode === 'inbox')
-                <x-ui.empty-state icon="inbox-stack" title="Belum ada Ticket yang perlu ditangani." description="Request baru untuk Department ini akan muncul di sini." />
+                <x-ui.empty-state icon="inbox-stack" title="Belum ada Report yang perlu ditangani." description="Report baru untuk Department ini akan muncul di sini." />
             @elseif ($mode === 'project')
-                <x-ui.empty-state icon="lifebuoy" title="Belum ada Ticket untuk project ini." description="Request, bug, atau pertanyaan terkait project dapat dicatat sebagai Ticket ke department yang menanganinya." />
+                <x-ui.empty-state icon="lifebuoy" title="Belum ada Report." description="Bug, maintenance, request, dan kendala Project akan muncul di sini.">
+                    @can('create', App\Models\Ticket::class)
+                        @if ($this->project && ! $this->project->isArchived() && ! $this->project->status->is_terminal)
+                            <flux:button size="sm" variant="primary" icon="plus" :href="route('tickets.create', ['project' => $projectId])" wire:navigate>New Report</flux:button>
+                        @endif
+                    @endcan
+                </x-ui.empty-state>
             @elseif ($mode === 'mine')
-                <x-ui.empty-state icon="ticket" title="Tidak ada ticket di tampilan ini." description="Ticket yang Anda ajukan, pegang sebagai PIC, atau bantu sebagai kolaborator akan muncul di sini." />
+                <x-ui.empty-state icon="chat-bubble-left-right" title="Tidak ada report di tampilan ini." description="Report yang Anda buat, pegang sebagai PIC, atau bantu sebagai kolaborator akan muncul di sini." />
             @else
-                <x-ui.empty-state icon="ticket" title="Tidak ada ticket di tampilan ini." description="Ticket yang dapat Anda lihat akan muncul di sini." />
+                <x-ui.empty-state icon="lifebuoy" title="Tidak ada report di tampilan ini." description="Bug, maintenance, request, issue, dan catatan pekerjaan yang dapat Anda lihat akan muncul di sini." />
             @endif
         </x-ui.table-card>
     @else
         <x-ui.table-card class="hidden md:block">
             <flux:table :paginate="$this->tickets" class="[&_[data-flux-column]:first-child]:ps-5 [&_[data-flux-cell]:first-child]:ps-5 [&_[data-flux-column]:last-child]:pe-5 [&_[data-flux-cell]:last-child]:pe-5" pagination:class="px-5 pb-3">
                 <flux:table.columns>
-                    <flux:table.column>Ticket</flux:table.column>
-                    <flux:table.column class="max-lg:hidden">Requester</flux:table.column>
+                    <flux:table.column>Report</flux:table.column>
                     @if ($mode === 'inbox')
                         <flux:table.column class="max-xl:hidden">Type</flux:table.column>
                         <flux:table.column>Priority</flux:table.column>
-                        <flux:table.column class="max-lg:hidden">Age</flux:table.column>
+                        <flux:table.column class="max-lg:hidden">Requester</flux:table.column>
                         <flux:table.column>PIC</flux:table.column>
                         <flux:table.column>Status</flux:table.column>
+                        <flux:table.column class="max-lg:hidden">Age</flux:table.column>
+                    @elseif ($mode === 'mine')
+                        <flux:table.column>Status</flux:table.column>
+                        <flux:table.column>Who Is Handling</flux:table.column>
+                        <flux:table.column class="max-lg:hidden">Last Update</flux:table.column>
                     @else
-                        <flux:table.column class="max-xl:hidden">Department</flux:table.column>
-                        <flux:table.column>PIC</flux:table.column>
+                        <flux:table.column class="max-xl:hidden">Type</flux:table.column>
+                        <flux:table.column>PIC / Department</flux:table.column>
                         <flux:table.column>Status</flux:table.column>
                         <flux:table.column class="max-lg:hidden">Priority</flux:table.column>
                         <flux:table.column class="max-xl:hidden">Updated</flux:table.column>
                     @endif
-                    <flux:table.column>Deadline</flux:table.column>
                     <flux:table.column align="end"><span class="sr-only">Actions</span></flux:table.column>
                 </flux:table.columns>
                 <flux:table.rows>
@@ -559,17 +653,25 @@ new class extends Component {
                         @php($receivedAt = $ticket->received_at ? \Illuminate\Support\Carbon::parse($ticket->received_at) : $ticket->created_at)
                         @php($staleUnassigned = $ticket->accepted_at && ! $ticket->picAssignment && $ticket->accepted_at->lt(now()->subDay()) && $ticket->isActive())
                         <flux:table.row :key="$ticket->id" class="cursor-pointer hover:bg-zinc-50" x-data x-on:click="Livewire.navigate('{{ route('tickets.show', $ticket) }}')">
-                            <flux:table.cell class="max-w-80">
-                                <div class="font-mono text-xs text-zinc-500">{{ $ticket->number }}</div>
+                            <flux:table.cell class="max-w-96">
                                 <a href="{{ route('tickets.show', $ticket) }}" wire:navigate x-on:click.stop class="block truncate font-medium text-zinc-900 hover:underline">{{ $ticket->title }}</a>
+                                <div class="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-zinc-500">
+                                    <span class="shrink-0 font-mono">{{ $ticket->number }}</span>
+                                    @if ($mode === 'mine')
+                                        <flux:badge size="sm" :color="$ticket->type->color ?? 'zinc'" inset="top bottom" class="shrink-0 uppercase">{{ $ticket->type->name }}</flux:badge>
+                                    @endif
+                                    @if ($ticket->project_id && isset($this->visibleProjectNames[$ticket->project_id]))
+                                        <span class="truncate">· {{ $this->visibleProjectNames[$ticket->project_id] }}</span>
+                                    @endif
+                                    @if ($ticket->isOverdue())
+                                        <span class="shrink-0 text-red-600">· Overdue</span>
+                                    @endif
+                                </div>
                             </flux:table.cell>
-                            <flux:table.cell class="max-lg:hidden">{{ $ticket->requester->name }}</flux:table.cell>
                             @if ($mode === 'inbox')
-                                <flux:table.cell class="max-xl:hidden">{{ $ticket->type->name }}</flux:table.cell>
+                                <flux:table.cell class="max-xl:hidden"><flux:badge size="sm" :color="$ticket->type->color ?? 'zinc'" inset="top bottom" class="uppercase">{{ $ticket->type->name }}</flux:badge></flux:table.cell>
                                 <flux:table.cell><x-ui.master-badge :master="$ticket->priority" /></flux:table.cell>
-                                <flux:table.cell class="max-lg:hidden">
-                                    <span class="text-sm text-zinc-600" title="{{ $receivedAt->translatedFormat('d M Y H:i') }}">{{ $receivedAt->diffForHumans() }}</span>
-                                </flux:table.cell>
+                                <flux:table.cell class="max-lg:hidden">{{ $ticket->requester->name }}</flux:table.cell>
                                 <flux:table.cell>
                                     @if ($ticket->picAssignment)
                                         {{ $ticket->picAssignment->user->name }}
@@ -582,20 +684,26 @@ new class extends Component {
                                     @endif
                                 </flux:table.cell>
                                 <flux:table.cell><x-ui.master-badge :master="$ticket->status" /></flux:table.cell>
+                                <flux:table.cell class="max-lg:hidden">
+                                    <span class="text-sm text-zinc-600" title="{{ $receivedAt->translatedFormat('d M Y H:i') }}">{{ $receivedAt->diffForHumans(short: true) }}</span>
+                                </flux:table.cell>
+                            @elseif ($mode === 'mine')
+                                <flux:table.cell><x-ui.master-badge :master="$ticket->status" /></flux:table.cell>
+                                <flux:table.cell>
+                                    <span class="block text-sm text-zinc-800">{{ $ticket->picAssignment?->user->name ?? 'Belum ada PIC' }}</span>
+                                    <span class="block text-xs text-zinc-500">{{ $ticket->currentDepartment->name }}</span>
+                                </flux:table.cell>
+                                <flux:table.cell class="max-lg:hidden"><span class="text-sm text-zinc-500" title="{{ $ticket->updated_at?->translatedFormat('d M Y H:i') }}">{{ $ticket->updated_at?->diffForHumans() }}</span></flux:table.cell>
                             @else
-                                <flux:table.cell class="max-xl:hidden">{{ $ticket->currentDepartment->name }}</flux:table.cell>
-                                <flux:table.cell>{{ $ticket->picAssignment?->user->name ?? '—' }}</flux:table.cell>
+                                <flux:table.cell class="max-xl:hidden"><flux:badge size="sm" :color="$ticket->type->color ?? 'zinc'" inset="top bottom" class="uppercase">{{ $ticket->type->name }}</flux:badge></flux:table.cell>
+                                <flux:table.cell>
+                                    <span class="block text-sm text-zinc-800">{{ $ticket->picAssignment?->user->name ?? '—' }}</span>
+                                    <span class="block text-xs text-zinc-500">{{ $ticket->currentDepartment->name }}</span>
+                                </flux:table.cell>
                                 <flux:table.cell><x-ui.master-badge :master="$ticket->status" /></flux:table.cell>
                                 <flux:table.cell class="max-lg:hidden"><x-ui.master-badge :master="$ticket->priority" /></flux:table.cell>
                                 <flux:table.cell class="max-xl:hidden"><span class="text-sm text-zinc-500" title="{{ $ticket->updated_at?->translatedFormat('d M Y H:i') }}">{{ $ticket->updated_at?->diffForHumans() }}</span></flux:table.cell>
                             @endif
-                            <flux:table.cell>
-                                @if ($ticket->current_due_at)
-                                    <x-ui.deadline :date="$ticket->current_due_at" :done="! $ticket->isActive()" compact />
-                                @else
-                                    <span class="text-sm text-zinc-400">—</span>
-                                @endif
-                            </flux:table.cell>
                             <flux:table.cell align="end">
                                 <div x-on:click.stop class="flex items-center justify-end gap-1">
                                     @if ($mode === 'inbox' && $this->canManage($ticket))
@@ -628,6 +736,7 @@ new class extends Component {
                             <x-ui.master-badge :master="$ticket->status" />
                         </div>
                         <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <flux:badge size="sm" :color="$ticket->type->color ?? 'zinc'" inset="top bottom" class="uppercase">{{ $ticket->type->name }}</flux:badge>
                             <x-ui.master-badge :master="$ticket->priority" />
                             <span class="truncate text-xs text-zinc-500">{{ $mode === 'inbox' ? 'Requester '.$ticket->requester->name : $ticket->currentDepartment->name }}</span>
                         </div>

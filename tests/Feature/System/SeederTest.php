@@ -38,10 +38,10 @@ class SeederTest extends TestCase
         $this->assertSame(ProgressMode::TaskWeighted, $pos->progress_mode);
         $this->assertGreaterThan(0, $pos->progress_percentage);
 
-        $this->assertSame(9, Ticket::query()->count());
+        $this->assertSame(11, Ticket::query()->count(), 'Includes the Phase 6 Maintenance and Note demo reports');
         $queue = app(TicketQueue::class);
         $counts = $queue->counts($queue->base($admin), ['new', 'unassigned', 'assigned', 'in_progress', 'waiting', 'review', 'resolved', 'overdue'], $admin);
-        $this->assertSame(['new' => 1, 'unassigned' => 1, 'assigned' => 1, 'in_progress' => 2, 'waiting' => 1, 'review' => 2, 'resolved' => 1, 'overdue' => 1], $counts);
+        $this->assertSame(['new' => 3, 'unassigned' => 1, 'assigned' => 1, 'in_progress' => 2, 'waiting' => 1, 'review' => 2, 'resolved' => 1, 'overdue' => 1], $counts);
 
         // Demo approval: the bug-workflow ticket waits for the DEV leader.
         $this->assertSame(2, ApprovalTemplate::query()->count());
@@ -51,7 +51,7 @@ class SeederTest extends TestCase
 
         $this->seed(DevelopmentSeeder::class);
         $this->assertSame(3, Project::query()->count(), 'Seeder is idempotent');
-        $this->assertSame(9, Ticket::query()->count());
+        $this->assertSame(11, Ticket::query()->count(), 'Includes the Phase 6 Maintenance and Note demo reports');
         $this->assertSame(5, Workflow::query()->count());
     }
 

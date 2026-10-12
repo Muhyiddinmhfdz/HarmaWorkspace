@@ -21,7 +21,7 @@ use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithFileUploads;
 
-new #[Title('New Ticket')] class extends Component {
+new #[Title('New Report')] class extends Component {
     use WithFeedback, WithFileUploads;
 
     #[Url(as: 'project')]
@@ -77,13 +77,17 @@ new #[Title('New Ticket')] class extends Component {
         if ($this->lockedProjectId !== null) {
             $project = Project::query()->with('status')->findOrFail($this->lockedProjectId);
             $this->authorize('view', $project);
-            abort_if($project->isArchived() || $project->status->is_terminal, 403, 'Project ini tidak lagi menerima Ticket baru.');
+            abort_if($project->isArchived() || $project->status->is_terminal, 403, 'Project ini tidak lagi menerima Report baru.');
             $this->project_id = (string) $project->id;
             $this->client_id = (string) $project->client_id;
-            $this->showMore = true;
         }
 
         $this->priority_id = (string) Priority::query()->forScope(MasterScope::Ticket)->active()->orderBy('level')->skip(1)->value('id');
+
+        // One category means no real choice: preselect it.
+        if ($this->options['categories']->count() === 1) {
+            $this->ticket_category_id = (string) $this->options['categories']->first()->id;
+        }
     }
 
     #[Computed]
@@ -105,7 +109,7 @@ new #[Title('New Ticket')] class extends Component {
     public function options(): array
     {
         return [
-            'types' => TicketType::query()->active()->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
+            'types' => TicketType::query()->active()->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'description']),
             'categories' => TicketCategory::query()->active()->orderBy('sort_order')->orderBy('name')->get(['id', 'name']),
             'subcategories' => $this->ticket_category_id !== ''
                 ? TicketSubcategory::query()->active()->where('ticket_category_id', (int) $this->ticket_category_id)->orderBy('sort_order')->orderBy('name')->get(['id', 'name'])
@@ -222,7 +226,8 @@ new #[Title('New Ticket')] class extends Component {
             'files' => ['array', 'max:'.AttachmentRules::maxPerUpload()],
             'files.*' => AttachmentRules::file(),
         ], [
-            'current_department_id.required' => 'Pilih Department tujuan yang akan menangani ticket ini.',
+            'ticket_type_id.required' => 'Pilih jenis report.',
+            'current_department_id.required' => 'Pilih Department tujuan yang akan menangani report ini.',
             'due_date.after_or_equal' => 'Deadline tidak boleh di masa lalu.',
         ], [
             'title' => 'Title', 'ticket_type_id' => 'Type', 'ticket_category_id' => 'Category', 'priority_id' => 'Priority',
@@ -245,42 +250,27 @@ new #[Title('New Ticket')] class extends Component {
             'workflow_id' => filled($validated['workflow_id']) ? (int) $validated['workflow_id'] : null,
         ], auth()->user(), array_values($this->files));
 
-        $this->notifyAfterRedirect('success', 'Ticket '.$ticket->number.' berhasil dibuat.');
+        $this->notifyAfterRedirect('success', 'Laporan '.$ticket->number.' berhasil dibuat.');
         $this->redirectRoute('tickets.show', $ticket, navigate: true);
     }
 }; ?>
 
 <div class="mx-auto w-full max-w-3xl">
-    <x-ui.page-header title="New Ticket" description="Isi yang penting dulu; ticket langsung masuk ke Department Inbox tujuan.">
+    <x-ui.page-header title="New Report" description="Bug, maintenance, request, issue, atau catatan pekerjaan. Report langsung masuk ke Department Inbox tujuan.">
         <x-slot:breadcrumbs>
             <flux:breadcrumbs>
                 @if ($this->project && $lockedProjectId)
                     <flux:breadcrumbs.item :href="route('projects.index')" wire:navigate>Projects</flux:breadcrumbs.item>
-                    <flux:breadcrumbs.item :href="route('projects.show', ['project' => $this->project, 'tab' => 'tickets'])" wire:navigate>{{ $this->project->name }}</flux:breadcrumbs.item>
+                    <flux:breadcrumbs.item :href="route('projects.show', ['project' => $this->project, 'tab' => 'reports'])" wire:navigate>{{ $this->project->name }}</flux:breadcrumbs.item>
                 @else
-                    <flux:breadcrumbs.item :href="route('tickets.index')" wire:navigate>Tickets</flux:breadcrumbs.item>
+                    <flux:breadcrumbs.item :href="route('tickets.index')" wire:navigate>Reports</flux:breadcrumbs.item>
                 @endif
                 <flux:breadcrumbs.item>New</flux:breadcrumbs.item>
             </flux:breadcrumbs>
         </x-slot:breadcrumbs>
     </x-ui.page-header>
 
-    <form wire:submit="save" class="space-y-6 rounded-xl border border-zinc-200 bg-white p-6 sm:p-8">
-        @if ($lockedProjectId || $lockedTaskId)
-            <div class="rounded-lg bg-zinc-50 px-4 py-3 text-sm">
-                @if ($this->project)
-                    <span class="text-zinc-500">Project</span>
-                    <div class="font-medium text-zinc-900">{{ $this->project->number }} · {{ $this->project->name }}</div>
-                @endif
-                @if ($this->lockedTask)
-                    <div class="mt-2 text-zinc-500">Task</div>
-                    <div class="font-medium text-zinc-900">{{ $this->lockedTask->number }} · {{ $this->lockedTask->title }}</div>
-                @endif
-            </div>
-        @endif
-
-        <flux:input wire:model="title" label="Title" badge="Required" maxlength="200" placeholder="Contoh: Error transaksi POS saat pembayaran" autofocus />
-
+    <form wire:submit="save" class="space-y-6 rounded-xl border border-zinc-200 bg-white p-5 sm:p-8">
         @if ($this->options['types']->isEmpty())
             <flux:callout variant="warning" icon="exclamation-triangle" heading="Master Ticket Type belum tersedia.">
                 <flux:callout.text>Hubungi administrator untuk mengatur Master Data Ticket.</flux:callout.text>
@@ -292,78 +282,104 @@ new #[Title('New Ticket')] class extends Component {
             </flux:callout>
         @endif
 
-        <div class="grid gap-4 sm:grid-cols-3">
-            <flux:select wire:model="ticket_type_id" label="Type" badge="Required" placeholder="Pilih type">
-                @foreach ($this->options['types'] as $option)
-                    <flux:select.option :value="$option->id" wire:key="ty-{{ $option->id }}">{{ $option->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
-            <flux:select wire:model.live="ticket_category_id" label="Category" badge="Required" placeholder="Pilih category">
-                @foreach ($this->options['categories'] as $option)
-                    <flux:select.option :value="$option->id" wire:key="ca-{{ $option->id }}">{{ $option->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
-            <flux:select wire:model="priority_id" label="Priority">
-                @foreach ($this->options['priorities'] as $option)
-                    <flux:select.option :value="$option->id" wire:key="pr-{{ $option->id }}">{{ $option->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
-        </div>
+        {{-- Type first: what is being reported (types come from the master) --}}
+        @if ($this->options['types']->isNotEmpty())
+            <flux:field>
+                <flux:label badge="Required">What are you reporting?</flux:label>
+                <div role="radiogroup" aria-label="Report type" class="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    @foreach ($this->options['types'] as $option)
+                        <label wire:key="ty-{{ $option->id }}"
+                            @class([
+                                'flex min-h-12 cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition focus-within:ring-2 focus-within:ring-accent',
+                                'border-accent bg-zinc-50 font-medium text-zinc-900' => $ticket_type_id === (string) $option->id,
+                                'border-zinc-200 text-zinc-700 hover:border-zinc-300' => $ticket_type_id !== (string) $option->id,
+                            ])
+                            @if ($option->description) title="{{ $option->description }}" @endif>
+                            <input type="radio" wire:model.live="ticket_type_id" value="{{ $option->id }}" class="sr-only" />
+                            <span class="min-w-0 truncate">{{ $option->name }}</span>
+                            @if ($ticket_type_id === (string) $option->id)
+                                <flux:icon.check variant="micro" class="ms-auto shrink-0 text-accent" />
+                            @endif
+                        </label>
+                    @endforeach
+                </div>
+                <flux:error name="ticket_type_id" />
+            </flux:field>
+        @endif
 
-        <div>
-            <livewire:department-picker wire:model="current_department_id" label="Target Department" :required="true"
-                description="Department yang akan menangani request ini." key="ticket-target-department" />
-            <flux:error name="current_department_id" />
+        <flux:input wire:model="title" label="Title" badge="Required" maxlength="200" placeholder="Contoh: Error jurnal saat pembayaran POS" />
+
+        {{-- Related work: fixed when the report starts from a project or task --}}
+        @if ($lockedProjectId || $lockedTaskId)
+            <div class="grid gap-3 rounded-lg bg-zinc-50 px-4 py-3 text-sm sm:grid-cols-2">
+                @if ($this->project)
+                    <div class="min-w-0">
+                        <span class="text-zinc-500">Project</span>
+                        <div class="truncate font-medium text-zinc-900">{{ $this->project->number }} · {{ $this->project->name }}</div>
+                    </div>
+                @endif
+                @if ($this->lockedTask)
+                    <div class="min-w-0">
+                        <span class="text-zinc-500">Related Task</span>
+                        <div class="truncate font-medium text-zinc-900">{{ $this->lockedTask->number }} · {{ $this->lockedTask->title }}</div>
+                    </div>
+                @elseif ($this->project)
+                    <flux:select wire:model.live="task_id" label="Related Task" size="sm">
+                        <flux:select.option value="">Tanpa task</flux:select.option>
+                        @foreach ($this->taskOptions as $option)
+                            <flux:select.option :value="$option->id" wire:key="tk-{{ $option->id }}">{{ $option->number }} · {{ $option->title }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                @endif
+            </div>
+        @else
+            <div class="grid gap-4 sm:grid-cols-2">
+                <flux:select wire:model.live="project_id" label="Project" description="Opsional. Hanya project aktif yang dapat Anda lihat.">
+                    <flux:select.option value="">Tanpa project</flux:select.option>
+                    @foreach ($this->projectOptions as $option)
+                        <flux:select.option :value="$option->id" wire:key="pj-{{ $option->id }}">{{ $option->number }} · {{ $option->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+                <flux:select wire:model.live="task_id" label="Related Task" :description="$project_id !== '' ? 'Task dari project yang dipilih.' : 'Memilih task juga mengisi project-nya.'">
+                    <flux:select.option value="">Tanpa task</flux:select.option>
+                    @foreach ($this->taskOptions as $option)
+                        <flux:select.option :value="$option->id" wire:key="tk-{{ $option->id }}">{{ $option->number }} · {{ $option->title }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            </div>
+        @endif
+
+        <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+                <livewire:department-picker wire:model="current_department_id" label="Target Department" :required="true" key="ticket-target-department" />
+                <flux:error name="current_department_id" />
+            </div>
+            @if ($this->options['categories']->count() !== 1)
+                <flux:select wire:model.live="ticket_category_id" label="Category" badge="Required" placeholder="Pilih category">
+                    @foreach ($this->options['categories'] as $option)
+                        <flux:select.option :value="$option->id" wire:key="ca-{{ $option->id }}">{{ $option->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            @endif
         </div>
 
         <flux:textarea wire:model="description" label="Description" badge="Required" rows="5" placeholder="Jelaskan masalah atau kebutuhan, langkah yang dilakukan, dan hasil yang diharapkan." />
 
         <div class="border-t border-zinc-100 pt-4">
             <flux:button variant="ghost" size="sm" :icon="$showMore ? 'chevron-up' : 'chevron-down'" wire:click="$toggle('showMore')">More options</flux:button>
+            <flux:text size="sm" class="mt-1">Priority, client, deadline, dan lampiran.</flux:text>
         </div>
 
         @if ($showMore)
             <div class="space-y-6">
                 <div class="grid gap-4 sm:grid-cols-2">
-                    @unless ($lockedProjectId)
-                        <flux:select wire:model.live="project_id" label="Project" description="Opsional. Hanya project aktif yang dapat Anda lihat.">
-                            <flux:select.option value="">Tanpa project</flux:select.option>
-                            @foreach ($this->projectOptions as $option)
-                                <flux:select.option :value="$option->id" wire:key="pj-{{ $option->id }}">{{ $option->number }} · {{ $option->name }}</flux:select.option>
-                            @endforeach
-                        </flux:select>
-                    @endunless
-                    @unless ($lockedTaskId)
-                        <flux:select wire:model.live="task_id" label="Related task" :description="$project_id !== '' ? 'Task dari project yang dipilih.' : 'Memilih task juga mengisi project-nya.'">
-                            <flux:select.option value="">Tanpa task</flux:select.option>
-                            @foreach ($this->taskOptions as $option)
-                                <flux:select.option :value="$option->id" wire:key="tk-{{ $option->id }}">{{ $option->number }} · {{ $option->title }}</flux:select.option>
-                            @endforeach
-                        </flux:select>
-                    @endunless
+                    <flux:select wire:model="priority_id" label="Priority">
+                        @foreach ($this->options['priorities'] as $option)
+                            <flux:select.option :value="$option->id" wire:key="pr-{{ $option->id }}">{{ $option->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:input wire:model="due_date" type="date" label="Due date" :min="today()->toDateString()" />
                 </div>
-                <div class="grid gap-4 sm:grid-cols-2">
-                    <flux:select wire:model="ticket_subcategory_id" label="Subcategory" :disabled="$ticket_category_id === ''" :description="$ticket_category_id === '' ? 'Pilih category terlebih dahulu.' : null">
-                        <flux:select.option value="">—</flux:select.option>
-                        @foreach ($this->options['subcategories'] as $option)
-                            <flux:select.option :value="$option->id" wire:key="sc-{{ $option->id }}">{{ $option->name }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                    <flux:select wire:model="ticket_source_id" label="Source">
-                        <flux:select.option value="">—</flux:select.option>
-                        @foreach ($this->options['sources'] as $option)
-                            <flux:select.option :value="$option->id" wire:key="so-{{ $option->id }}">{{ $option->name }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                </div>
-                @if ($this->processes->count() > 1)
-                    <flux:select wire:model="workflow_id" label="Process" description="Biarkan default kecuali ticket ini membutuhkan proses khusus.">
-                        <flux:select.option value="">{{ $this->processes->firstWhere('is_default', true)?->name ?? 'Default' }} (default)</flux:select.option>
-                        @foreach ($this->processes->where('is_default', false) as $process)
-                            <flux:select.option :value="$process->id" wire:key="wf-{{ $process->id }}">{{ $process->name }}</flux:select.option>
-                        @endforeach
-                    </flux:select>
-                @endif
                 <div class="grid gap-4 sm:grid-cols-2">
                     <flux:select wire:model="client_id" label="Client" description="Opsional, misalnya client yang melaporkan.">
                         <flux:select.option value="">Tanpa client</flux:select.option>
@@ -371,7 +387,28 @@ new #[Title('New Ticket')] class extends Component {
                             <flux:select.option :value="$option->id" wire:key="cl-{{ $option->id }}">{{ $option->name }}</flux:select.option>
                         @endforeach
                     </flux:select>
-                    <flux:input wire:model="due_date" type="date" label="Due date" :min="today()->toDateString()" />
+                    <flux:select wire:model="ticket_subcategory_id" label="Subcategory" :disabled="$ticket_category_id === ''" :description="$ticket_category_id === '' ? 'Pilih category terlebih dahulu.' : null">
+                        <flux:select.option value="">—</flux:select.option>
+                        @foreach ($this->options['subcategories'] as $option)
+                            <flux:select.option :value="$option->id" wire:key="sc-{{ $option->id }}">{{ $option->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                </div>
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <flux:select wire:model="ticket_source_id" label="Source">
+                        <flux:select.option value="">—</flux:select.option>
+                        @foreach ($this->options['sources'] as $option)
+                            <flux:select.option :value="$option->id" wire:key="so-{{ $option->id }}">{{ $option->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    @if ($this->processes->count() > 1)
+                        <flux:select wire:model="workflow_id" label="Process" description="Biarkan default kecuali report ini membutuhkan proses khusus.">
+                            <flux:select.option value="">{{ $this->processes->firstWhere('is_default', true)?->name ?? 'Default' }} (default)</flux:select.option>
+                            @foreach ($this->processes->where('is_default', false) as $process)
+                                <flux:select.option :value="$process->id" wire:key="wf-{{ $process->id }}">{{ $process->name }}</flux:select.option>
+                            @endforeach
+                        </flux:select>
+                    @endif
                 </div>
                 <div>
                     <flux:field>
@@ -399,10 +436,10 @@ new #[Title('New Ticket')] class extends Component {
         @endif
 
         <div class="flex justify-end gap-2">
-            <flux:button variant="ghost" :href="$lockedProjectId ? route('projects.show', ['project' => $lockedProjectId, 'tab' => 'tickets']) : route('tickets.index')" wire:navigate>Cancel</flux:button>
+            <flux:button variant="ghost" :href="$lockedTaskId ? route('tasks.show', $lockedTaskId) : ($lockedProjectId ? route('projects.show', ['project' => $lockedProjectId, 'tab' => 'reports']) : route('tickets.index'))" wire:navigate>Cancel</flux:button>
             <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="save,files" :disabled="! $this->mastersReady()">
-                <span wire:loading.remove wire:target="save">Create Ticket</span>
-                <span wire:loading wire:target="save">Creating...</span>
+                <span wire:loading.remove wire:target="save">Submit Report</span>
+                <span wire:loading wire:target="save">Submitting...</span>
             </flux:button>
         </div>
     </form>

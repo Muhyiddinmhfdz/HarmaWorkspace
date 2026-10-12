@@ -12,7 +12,7 @@ new #[Title('Department Inbox')] class extends Component {
 }; ?>
 
 <div class="mx-auto w-full max-w-7xl">
-    <x-ui.page-header title="Department Inbox" description="Antrian kerja department: request baru, yang belum punya PIC, yang sedang dikerjakan, dan yang menunggu." />
+    <x-ui.page-header title="Department Inbox" description="Antrian kerja department: report baru, yang belum punya PIC, yang sedang dikerjakan, dan yang menunggu." />
 
     <livewire:tickets.table mode="inbox" />
 </div>

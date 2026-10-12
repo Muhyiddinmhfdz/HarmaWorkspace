@@ -84,7 +84,7 @@ class ChangeTicketStatus
             $resume = $ticket->resumeStatus;
 
             if (! $from->is_blocked || $resume === null) {
-                throw new BusinessRuleException('Ticket ini tidak sedang menunggu informasi. Muat ulang data terbaru.');
+                throw new BusinessRuleException('Laporan ini tidak sedang menunggu informasi. Muat ulang data terbaru.');
             }
 
             $transition = $this->workflow->resolve($ticket, $from, $resume, $context, 'provide_information');
@@ -137,7 +137,7 @@ class ChangeTicketStatus
             $primary = $primaryTicketId !== null ? Ticket::query()->find($primaryTicketId) : null;
 
             if ($primary === null || $primary->id === $ticket->id || ! $primary->isVisibleTo($actor)) {
-                throw new BusinessRuleException('Resolution '.$resolution->name.' membutuhkan ticket utama yang valid.');
+                throw new BusinessRuleException('Resolution '.$resolution->name.' membutuhkan laporan utama yang valid.');
             }
         }
 

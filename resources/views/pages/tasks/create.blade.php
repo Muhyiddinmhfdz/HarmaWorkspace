@@ -67,6 +67,7 @@ new #[Title('New Task')] class extends Component {
             abort_if($project->isArchived() || $project->status->is_terminal, 403, 'Project ini tidak lagi menerima task baru.');
             $this->authorize('create', [Task::class, $project]);
             $this->project_id = (string) $project->id;
+            $this->applyProjectDefaults();
         } else {
             $this->authorize('create', Task::class);
             $this->department_id = (string) auth()->user()->primaryMembership()->value('department_id');
@@ -160,7 +161,30 @@ new #[Title('New Task')] class extends Component {
         abort_if($this->lockedProjectId !== null, 403);
 
         $this->reset('department_id', 'milestone_id', 'collaborator_ids');
+        unset($this->project, $this->assignableIds, $this->departmentOptions);
         $this->pic_user_id = $this->project && ! in_array(auth()->id(), $this->assignableIds ?? [], true) ? null : auth()->id();
+
+        if ($this->project !== null) {
+            $this->applyProjectDefaults();
+        }
+    }
+
+    /**
+     * Quick create from a project: the user's own department when it takes
+     * part in the project (otherwise the lead department), and the user as
+     * PIC when they may be assigned. Both stay editable and validated.
+     */
+    private function applyProjectDefaults(): void
+    {
+        $project = $this->project;
+        $departmentIds = array_map(intval(...), $project->departments()->pluck('department_id')->all());
+        $mine = auth()->user()->activeMemberships()->whereIn('department_id', $departmentIds)->orderByDesc('is_primary')->value('department_id');
+
+        $this->department_id = (string) ($mine ?? $project->leadDepartment()->value('department_id') ?? '');
+
+        if (in_array(auth()->id(), $this->assignableIds ?? [], true)) {
+            $this->pic_user_id = auth()->id();
+        }
     }
 
     public function updatedCollaboratorToAdd(?int $value): void
@@ -273,14 +297,8 @@ new #[Title('New Task')] class extends Component {
                 <flux:error name="pic_user_id" />
             </div>
         </div>
-        <flux:error name="department_id" />
 
-        <div class="grid gap-4 sm:grid-cols-3">
-            <flux:select wire:model="status_id" label="Status">
-                @foreach ($this->options['statuses'] as $option)
-                    <flux:select.option :value="$option->id" wire:key="st-{{ $option->id }}">{{ $option->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
+        <div class="grid gap-4 sm:grid-cols-2">
             <flux:select wire:model="priority_id" label="Priority">
                 @foreach ($this->options['priorities'] as $option)
                     <flux:select.option :value="$option->id" wire:key="pp-{{ $option->id }}">{{ $option->name }}</flux:select.option>
@@ -296,6 +314,13 @@ new #[Title('New Task')] class extends Component {
         @if ($showMore)
             <div class="space-y-6">
                 <flux:textarea wire:model="description" label="Description" rows="4" />
+                @if ($this->options['statuses']->count() > 1)
+                    <flux:select wire:model="status_id" label="Initial status" description="Biasanya cukup status awal default.">
+                        @foreach ($this->options['statuses'] as $option)
+                            <flux:select.option :value="$option->id" wire:key="st-{{ $option->id }}">{{ $option->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                @endif
                 <div class="grid gap-4 sm:grid-cols-2">
                     <flux:select wire:model="task_type_id" label="Type">
                         <flux:select.option value="">—</flux:select.option>
@@ -333,8 +358,8 @@ new #[Title('New Task')] class extends Component {
                 </div>
                 <div class="grid gap-4 sm:grid-cols-3">
                     <flux:input wire:model="start_date" type="date" label="Start date" />
-                    <flux:input wire:model="estimated_hours" type="number" step="0.5" min="0" label="Work estimate (hours)" />
-                    <flux:input wire:model="weight" type="number" step="0.5" min="0" label="Weight override" description="Opsional; default = work estimate." />
+                    <flux:input wire:model="estimated_hours" type="number" step="0.5" min="0" label="Work estimate (hours)" description="Opsional, untuk perencanaan." />
+                    <flux:input wire:model="weight" type="number" step="0.5" min="0" label="Weight override" description="Jarang diperlukan." />
                 </div>
             </div>
         @endif

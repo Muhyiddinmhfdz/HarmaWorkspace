@@ -132,8 +132,10 @@ class DevelopmentSeeder extends Seeder
      */
     private function seedTickets(): void
     {
-        foreach (['Bug', 'Request', 'Incident', 'Question', 'Improvement', 'Change Request', 'Access Request', 'Data Request'] as $index => $name) {
-            TicketType::query()->firstOrCreate(['code' => strtoupper(str_replace(' ', '_', $name))], ['name' => $name, 'color' => ['red', 'sky', 'orange', 'violet', 'teal', 'indigo', 'amber', 'cyan'][$index], 'sort_order' => ($index + 1) * 10]);
+        // Operational report types first (Phase 6): Bug, Maintenance, Request,
+        // Issue, Note. Plain master data; no logic depends on these names.
+        foreach (['Bug', 'Maintenance', 'Request', 'Issue', 'Note', 'Incident', 'Question', 'Improvement', 'Change Request', 'Access Request', 'Data Request'] as $index => $name) {
+            TicketType::query()->firstOrCreate(['code' => strtoupper(str_replace(' ', '_', $name))], ['name' => $name, 'color' => ['red', 'amber', 'sky', 'orange', 'zinc', 'rose', 'violet', 'teal', 'indigo', 'lime', 'cyan'][$index], 'sort_order' => ($index + 1) * 10]);
         }
 
         $categories = [
@@ -190,6 +192,22 @@ class DevelopmentSeeder extends Seeder
             'project_id' => $pos?->id, 'task_id' => $pos !== null && $apiTask?->project_id === $pos->id ? $apiTask->id : null,
             'client_id' => $pos?->client_id, 'due_date' => now()->addDay()->toDateString(),
         ]);
+
+        // Project reports of other operational types (Phase 6 overview demo).
+        if ($pos !== null) {
+            $this->createTicketAs($users['sari'], [
+                'title' => 'Indexing tabel transaksi POS',
+                'description' => 'Query laporan harian melambat; perlu index pada tabel transaksi.',
+                'ticket_type_id' => $type('MAINTENANCE'), 'ticket_category_id' => $category('APPLICATION'),
+                'current_department_id' => $department('DEV'), 'project_id' => $pos->id, 'client_id' => $pos->client_id,
+            ]);
+            $this->createTicketAs($users['sari'], [
+                'title' => 'Catatan: client minta demo fitur stok minggu depan',
+                'description' => 'Siapkan data demo stok untuk 2 outlet.',
+                'ticket_type_id' => $type('NOTE'), 'ticket_category_id' => $category('APPLICATION'),
+                'current_department_id' => $department('DEV'), 'project_id' => $pos->id, 'client_id' => $pos->client_id,
+            ]);
+        }
 
         // Accepted, still without PIC.
         $unassigned = $this->createTicketAs($users['sari'], [

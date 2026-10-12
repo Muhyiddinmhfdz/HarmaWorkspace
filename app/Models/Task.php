@@ -318,6 +318,28 @@ class Task extends Model
     }
 
     /**
+     * Work has started and is moving: started, not blocked, not finished.
+     *
+     * @param  Builder<static>  $query
+     */
+    #[Scope]
+    protected function inProgress(Builder $query): void
+    {
+        $query->whereHas('status', fn (Builder $status) => $status->where('counts_as_started', true)->where('is_blocked', false)->where('is_terminal', false));
+    }
+
+    /**
+     * Open work that has not started yet (to do).
+     *
+     * @param  Builder<static>  $query
+     */
+    #[Scope]
+    protected function notStarted(Builder $query): void
+    {
+        $query->whereHas('status', fn (Builder $status) => $status->where('counts_as_started', false)->where('is_blocked', false)->where('is_terminal', false));
+    }
+
+    /**
      * @param  Builder<static>  $query
      */
     #[Scope]

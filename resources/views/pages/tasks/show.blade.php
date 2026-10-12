@@ -50,7 +50,7 @@ new class extends Component {
     #[On('task-updated')]
     public function refreshTask(): void
     {
-        unset($this->task, $this->can, $this->transitions, $this->pendingTransition);
+        unset($this->task, $this->can, $this->transitions, $this->primaryTransition, $this->canReport, $this->pendingTransition);
     }
 
     #[Computed]
@@ -139,6 +139,49 @@ new class extends Component {
     }
 
     /**
+     * The next natural step (e.g. Start Work, Mark as Done) shown as a button;
+     * every other action stays under More. Still a workflow transition.
+     *
+     * @return array{id: int, status: Status, label: string, kind: string, confirm: string|null}|null
+     */
+    #[Computed]
+    public function primaryTransition(): ?array
+    {
+        $current = $this->task->status;
+
+        // The natural next step from status flags and order (never names):
+        // resume a blocked task, complete it, start it, or move it forward.
+        // Blocking, cancelling and stepping back stay under More.
+        $rank = fn (array $transition): ?int => match (true) {
+            ! in_array($transition['kind'], ['normal', 'complete', 'approval'], true) => null,
+            $current->is_blocked && ! $transition['status']->is_blocked && ! $transition['status']->is_terminal => 0,
+            $transition['status']->counts_as_completed => 1,
+            ! $current->counts_as_started && $transition['status']->counts_as_started => 2,
+            // Otherwise the next status in the master's order (e.g. review).
+            $transition['status']->sort_order > $current->sort_order => 3,
+            default => null,
+        };
+
+        return collect($this->transitions)
+            ->filter(fn (array $transition): bool => $rank($transition) !== null)
+            ->sortBy($rank)
+            ->first();
+    }
+
+    /**
+     * Whether a report can be filed from this task (archived/finished projects
+     * take no new reports, also for the Super Admin bypass).
+     */
+    #[Computed]
+    public function canReport(): bool
+    {
+        $project = $this->task->project;
+
+        return auth()->user()->can('create', \App\Models\Ticket::class)
+            && ($project === null || (! $project->isArchived() && ! $project->status->is_terminal));
+    }
+
+    /**
      * @return list<int>|null
      */
     #[Computed]
@@ -209,7 +252,7 @@ new class extends Component {
         $updateProgress->handle($this->task, $this->progress, auth()->user());
 
         Flux::modal('task-progress')->close();
-        $this->notify('success', 'Progress task diperbarui menjadi '.$this->progress.'%.');
+        $this->notify('success', 'Progress Task diperbarui menjadi '.$this->progress.'%.');
         $this->afterChange();
     }
 
@@ -303,22 +346,22 @@ new class extends Component {
 @php($can = $this->can)
 
 <div class="mx-auto w-full max-w-6xl">
-    {{-- Header --}}
+    {{-- Header: what, status, progress --}}
     <div class="mb-6">
         <flux:breadcrumbs class="mb-3">
             @if ($task->project)
-                <flux:breadcrumbs.item :href="route('projects.index')" wire:navigate>Projects</flux:breadcrumbs.item>
+                <flux:breadcrumbs.item :href="route('projects.index')" wire:navigate class="max-sm:hidden">Projects</flux:breadcrumbs.item>
                 <flux:breadcrumbs.item :href="route('projects.show', ['project' => $task->project, 'tab' => 'tasks'])" wire:navigate>{{ $task->project->name }}</flux:breadcrumbs.item>
             @else
-                <flux:breadcrumbs.item :href="route('tasks.index')" wire:navigate>Tasks</flux:breadcrumbs.item>
+                <flux:breadcrumbs.item :href="route('tasks.mine')" wire:navigate>My Tasks</flux:breadcrumbs.item>
             @endif
-            <flux:breadcrumbs.item>{{ $task->number }}</flux:breadcrumbs.item>
+            <flux:breadcrumbs.item class="max-sm:hidden">{{ $task->number }}</flux:breadcrumbs.item>
         </flux:breadcrumbs>
 
         <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0">
                 <div class="font-mono text-sm text-zinc-500">{{ $task->number }}</div>
-                <flux:heading size="xl" level="1" class="mt-0.5">{{ $task->title }}</flux:heading>
+                <flux:heading size="xl" level="1" class="mt-0.5 [overflow-wrap:anywhere]">{{ $task->title }}</flux:heading>
                 <div class="mt-3 flex flex-wrap items-center gap-2">
                     <x-ui.master-badge :master="$task->status" />
                     <x-ui.master-badge :master="$task->priority" />
@@ -328,15 +371,25 @@ new class extends Component {
                 </div>
             </div>
 
-            <div class="flex shrink-0 items-center gap-2">
-                @if ($can['update'])
-                    <flux:button icon="pencil-square" :href="route('tasks.edit', $task)" wire:navigate>Edit</flux:button>
+            @php($primary = $this->primaryTransition)
+            <div class="flex shrink-0 flex-wrap items-center gap-2">
+                @if ($primary)
+                    @if ($primary['kind'] === 'complete' || $primary['confirm'])
+                        <flux:button :icon="$primary['kind'] === 'complete' ? 'check-badge' : 'arrow-right-circle'"
+                            x-on:click="hwConfirm({{ \Illuminate\Support\Js::from(['title' => $primary['label'].'?', 'text' => $primary['confirm'] ?? 'Progress menjadi 100% dan tanggal selesai aktual dicatat.', 'confirmText' => $primary['label']]) }}).then(ok => ok && $wire.startTransition({{ $primary['id'] }}))">
+                            {{ $primary['label'] }}
+                        </flux:button>
+                    @else
+                        <flux:button :icon="$primary['kind'] === 'approval' ? 'shield-check' : 'arrow-right-circle'" wire:click="startTransition({{ $primary['id'] }})" wire:loading.attr="disabled" wire:target="startTransition">
+                            {{ $primary['label'] }}@if ($primary['kind'] === 'approval') <span class="ms-1 text-xs text-zinc-400">(approval)</span>@endif
+                        </flux:button>
+                    @endif
                 @endif
-                @if ($this->transitions !== [] || $can['work'] || $can['schedule'])
+                @if ($this->transitions !== [] || $can['schedule'] || $can['update'] || $this->canReport)
                     <flux:dropdown position="bottom" align="end">
-                        <flux:button icon:trailing="chevron-down">More</flux:button>
+                        <flux:button icon="ellipsis-horizontal" aria-label="More actions" />
                         <flux:menu>
-                            @foreach ($this->transitions as $transition)
+                            @foreach (collect($this->transitions)->reject(fn (array $candidate): bool => $candidate['id'] === ($primary['id'] ?? null)) as $transition)
                                 @switch($transition['kind'])
                                     @case('cancel')
                                         <flux:menu.item icon="x-circle" variant="danger" wire:key="tr-{{ $transition['id'] }}"
@@ -365,14 +418,17 @@ new class extends Component {
                                         @endif
                                 @endswitch
                             @endforeach
-                            @if ($this->transitions !== [] && ($can['work'] || $can['schedule']))
+                            @if (count($this->transitions) > ($primary ? 1 : 0) && ($can['schedule'] || $can['update'] || $this->canReport))
                                 <flux:menu.separator />
                             @endif
-                            @if ($can['work'] && ! $task->status->is_terminal)
-                                <flux:menu.item icon="chart-bar" wire:click="openProgress">Update progress</flux:menu.item>
+                            @if ($this->canReport)
+                                <flux:menu.item icon="chat-bubble-left-right" :href="route('tickets.create', ['task' => $task->id])" wire:navigate>New Report</flux:menu.item>
                             @endif
                             @if ($can['schedule'])
                                 <flux:menu.item icon="calendar-days" wire:click="openSchedule">Change schedule</flux:menu.item>
+                            @endif
+                            @if ($can['update'])
+                                <flux:menu.item icon="pencil-square" :href="route('tasks.edit', $task)" wire:navigate>Edit task</flux:menu.item>
                             @endif
                         </flux:menu>
                     </flux:dropdown>
@@ -380,48 +436,33 @@ new class extends Component {
             </div>
         </div>
 
-        <div class="mt-4 max-w-md">
-            <div class="mb-1 flex items-center justify-between text-sm">
-                <span class="text-zinc-500">Progress</span>
-                <span class="font-semibold tabular-nums text-zinc-900">{{ $task->progress_percentage }}% complete</span>
+        <div class="mt-5 flex flex-col gap-3 rounded-xl border border-zinc-200 px-4 py-3 sm:flex-row sm:items-center">
+            <div class="flex items-center gap-3 sm:w-72">
+                <span class="text-sm text-zinc-500">Progress</span>
+                <span class="text-xl font-semibold tabular-nums text-zinc-900">{{ $task->progress_percentage }}%</span>
             </div>
-            <x-ui.progress-bar :value="$task->progress_percentage" :show-label="false" />
+            <x-ui.progress-bar :value="$task->progress_percentage" :show-label="false" class="flex-1" />
+            @if ($can['work'] && ! $task->status->is_terminal)
+                <flux:button size="sm" variant="primary" icon="chart-bar" wire:click="openProgress">Update progress</flux:button>
+            @endif
         </div>
     </div>
 
     @if ($task->status->is_blocked)
-        <flux:callout variant="danger" icon="no-symbol" class="mb-6" heading="Blocked">
+        <flux:callout variant="danger" icon="no-symbol" class="mb-6" :heading="$task->status->name">
             <flux:callout.text>
-                {{ $task->blocked_reason }}
-                <span class="mt-1 block text-xs">Blocked by {{ $task->blocker->name ?? 'System' }} · {{ $task->blocked_at?->translatedFormat('d M Y H:i') }}</span>
+                <span class="block whitespace-pre-line font-medium text-zinc-900">{{ $task->blocked_reason }}</span>
+                <span class="mt-1 block text-xs">Oleh {{ $task->blocker->name ?? 'System' }} · {{ $task->blocked_at?->translatedFormat('d M Y H:i') }}</span>
             </flux:callout.text>
         </flux:callout>
     @endif
 
     <div class="grid gap-6 lg:grid-cols-3">
-        {{-- Main --}}
-        <div class="min-w-0 space-y-6 lg:col-span-2">
-            <flux:card>
-                <flux:heading size="lg">Description</flux:heading>
-                <flux:text class="mt-2 whitespace-pre-line">{{ $task->description ?: 'Belum ada deskripsi.' }}</flux:text>
-            </flux:card>
-
-            <livewire:approvals.progress subject-type="task" :subject-id="$task->id" wire:key="approval-progress-{{ $task->id }}" />
-
-            <livewire:tasks.subtasks :task-id="$task->id" wire:key="subtasks-{{ $task->id }}" />
-
-            <livewire:tasks.checklist owner-type="task" :owner-id="$task->id" wire:key="checklist-{{ $task->id }}" />
-
-            <livewire:tickets.related :task-id="$task->id" wire:key="related-tickets-{{ $task->id }}" />
-
-            <livewire:tasks.activity :task-id="$task->id" wire:key="activity-{{ $task->id }}" />
-        </div>
-
-        {{-- Properties --}}
-        <aside class="h-fit rounded-xl border border-zinc-200 bg-white">
+        {{-- Properties: first on mobile, right column on desktop --}}
+        <aside class="h-fit min-w-0 rounded-xl border border-zinc-200 bg-white lg:order-last">
             <dl class="divide-y divide-zinc-100 px-5">
                 <div class="py-3">
-                    <dt class="text-xs text-zinc-500">Main PIC</dt>
+                    <dt class="text-xs text-zinc-500">PIC</dt>
                     <dd class="mt-1 flex items-center justify-between gap-2">
                         @if ($task->picAssignment)
                             <span class="flex min-w-0 items-center gap-2">
@@ -433,6 +474,38 @@ new class extends Component {
                         @endif
                         @if ($can['assign'])
                             <flux:button size="xs" variant="ghost" wire:click="openPic">{{ $task->picAssignment ? 'Change' : 'Assign' }}</flux:button>
+                        @endif
+                    </dd>
+                </div>
+                <div class="grid grid-cols-2 gap-4 py-3">
+                    <div class="min-w-0">
+                        <dt class="text-xs text-zinc-500">Department</dt>
+                        <dd class="mt-1 truncate text-sm font-medium text-zinc-900">{{ $task->department?->name ?? '—' }}</dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-zinc-500">Priority</dt>
+                        <dd class="mt-1"><x-ui.master-badge :master="$task->priority" /></dd>
+                    </div>
+                </div>
+                <x-ui.detail-item label="Project" class="py-3 sm:flex-col sm:gap-1">
+                    @if ($task->project)
+                        <a href="{{ route('projects.show', $task->project) }}" wire:navigate class="font-medium hover:underline">{{ $task->project->name }}</a>
+                    @else
+                        Standalone task
+                    @endif
+                </x-ui.detail-item>
+                <div class="py-3">
+                    <dt class="flex items-center justify-between text-xs text-zinc-500">
+                        Deadline
+                        @if ($can['schedule'])
+                            <flux:button size="xs" variant="ghost" wire:click="openSchedule" inset="top bottom">Change</flux:button>
+                        @endif
+                    </dt>
+                    <dd class="mt-1 text-sm">
+                        @if ($task->current_end)
+                            <x-ui.deadline :date="$task->current_end" :done="$task->status->is_terminal" />
+                        @else
+                            <span class="text-zinc-400">Belum ada deadline</span>
                         @endif
                     </dd>
                 </div>
@@ -462,46 +535,61 @@ new class extends Component {
                         @endif
                     </dd>
                 </div>
-                <x-ui.detail-item label="Department" class="py-3 sm:flex-col sm:gap-1">{{ $task->department?->name }}</x-ui.detail-item>
-                <x-ui.detail-item label="Project" class="py-3 sm:flex-col sm:gap-1">
-                    @if ($task->project)
-                        <a href="{{ route('projects.show', $task->project) }}" wire:navigate class="hover:underline">{{ $task->project->name }}</a>
-                    @else
-                        Standalone task
-                    @endif
-                </x-ui.detail-item>
-                @if ($task->project)
-                    <x-ui.detail-item label="Milestone" class="py-3 sm:flex-col sm:gap-1">{{ $task->milestone?->name }}</x-ui.detail-item>
-                @endif
-                <div class="py-3">
-                    <dt class="flex items-center justify-between text-xs text-zinc-500">
-                        Schedule
-                        @if ($can['schedule'])
-                            <flux:button size="xs" variant="ghost" wire:click="openSchedule">Change</flux:button>
-                        @endif
-                    </dt>
-                    <dd class="mt-1 space-y-1 text-sm">
-                        @if ($task->current_end)
-                            <x-ui.deadline :date="$task->current_end" :done="$task->status->is_terminal" />
-                        @else
-                            <span class="text-zinc-400">Belum ada deadline</span>
-                        @endif
-                        @if ($task->planned_end && $task->current_end && ! $task->planned_end->equalTo($task->current_end))
-                            <div class="text-xs text-zinc-500">Rencana awal {{ $task->planned_end->translatedFormat('d M Y') }}</div>
-                        @endif
-                        @if ($task->actual_start || $task->actual_end)
-                            <div class="text-xs text-zinc-500">Aktual: {{ $task->actual_start?->translatedFormat('d M Y') ?? '—' }} – {{ $task->actual_end?->translatedFormat('d M Y') ?? 'berjalan' }}</div>
-                        @endif
-                    </dd>
-                </div>
-                <x-ui.detail-item label="Work estimate" class="py-3 sm:flex-col sm:gap-1">
-                    {{ $task->estimated_hours !== null ? rtrim(rtrim($task->estimated_hours, '0'), '.').' jam' : '' }}
-                    <span class="block text-xs text-zinc-500">Bobot efektif {{ rtrim(rtrim(number_format(TaskWeight::of($task), 2, '.', ''), '0'), '.') }} ({{ TaskWeight::sourceLabel($task) }})</span>
-                </x-ui.detail-item>
-                <x-ui.detail-item label="Type / Category" class="py-3 sm:flex-col sm:gap-1">{{ collect([$task->type?->name, $task->category?->name])->filter()->join(' · ') }}</x-ui.detail-item>
-                <x-ui.detail-item label="Created" class="py-3 sm:flex-col sm:gap-1">{{ $task->created_at?->translatedFormat('d M Y') }}{{ $task->creator ? ' oleh '.$task->creator->name : '' }}</x-ui.detail-item>
             </dl>
+
+            <details class="group border-t border-zinc-200 px-5 py-3">
+                <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-zinc-700 hover:text-zinc-900">
+                    More Details
+                    <flux:icon.chevron-down variant="micro" class="transition group-open:rotate-180" />
+                </summary>
+                <dl class="mt-3 space-y-3 text-sm">
+                    @if ($task->project)
+                        <div><dt class="text-xs text-zinc-500">Milestone</dt><dd class="text-zinc-800">{{ $task->milestone?->name ?? '—' }}</dd></div>
+                    @endif
+                    <div>
+                        <dt class="text-xs text-zinc-500">Schedule</dt>
+                        <dd class="text-zinc-800">
+                            {{ $task->current_start?->translatedFormat('d M Y') ?? '—' }} – {{ $task->current_end?->translatedFormat('d M Y') ?? '—' }}
+                            @if ($task->planned_end && $task->current_end && ! $task->planned_end->equalTo($task->current_end))
+                                <span class="block text-xs text-zinc-500">Rencana awal {{ $task->planned_end->translatedFormat('d M Y') }}</span>
+                            @endif
+                            @if ($task->actual_start || $task->actual_end)
+                                <span class="block text-xs text-zinc-500">Aktual: {{ $task->actual_start?->translatedFormat('d M Y') ?? '—' }} – {{ $task->actual_end?->translatedFormat('d M Y') ?? 'berjalan' }}</span>
+                            @endif
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-xs text-zinc-500">Planning</dt>
+                        <dd class="text-zinc-800">
+                            {{ $task->estimated_hours !== null ? 'Estimasi '.rtrim(rtrim($task->estimated_hours, '0'), '.').' jam' : 'Tanpa estimasi' }}
+                            @if ($task->project)
+                                <span class="block text-xs text-zinc-500">Bobot progress {{ rtrim(rtrim(number_format(TaskWeight::of($task), 2, '.', ''), '0'), '.') }} ({{ TaskWeight::sourceLabel($task) }})</span>
+                            @endif
+                        </dd>
+                    </div>
+                    <div><dt class="text-xs text-zinc-500">Type / Category</dt><dd class="text-zinc-800">{{ collect([$task->type?->name, $task->category?->name])->filter()->join(' · ') ?: '—' }}</dd></div>
+                    <div><dt class="text-xs text-zinc-500">Created</dt><dd class="text-zinc-800">{{ $task->created_at?->translatedFormat('d M Y') }}{{ $task->creator ? ' oleh '.$task->creator->name : '' }}</dd></div>
+                </dl>
+            </details>
         </aside>
+
+        {{-- Main --}}
+        <div class="min-w-0 space-y-6 lg:col-span-2">
+            <flux:card>
+                <flux:heading size="lg">Description</flux:heading>
+                <flux:text class="mt-2 whitespace-pre-line [overflow-wrap:anywhere]">{{ $task->description ?: 'Belum ada deskripsi.' }}</flux:text>
+            </flux:card>
+
+            <livewire:approvals.progress subject-type="task" :subject-id="$task->id" wire:key="approval-progress-{{ $task->id }}" />
+
+            <livewire:tasks.subtasks :task-id="$task->id" wire:key="subtasks-{{ $task->id }}" />
+
+            <livewire:tasks.checklist owner-type="task" :owner-id="$task->id" wire:key="checklist-{{ $task->id }}" />
+
+            <livewire:tickets.related :task-id="$task->id" wire:key="related-tickets-{{ $task->id }}" />
+
+            <livewire:tasks.activity :task-id="$task->id" wire:key="activity-{{ $task->id }}" />
+        </div>
     </div>
 
     {{-- Modals --}}

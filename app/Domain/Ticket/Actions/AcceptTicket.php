@@ -30,7 +30,7 @@ class AcceptTicket
             $ticket = Ticket::query()->with(['status', 'acceptor:id,name', 'currentDepartment:id,name'])->lockForUpdate()->findOrFail($ticket->id);
 
             if ($ticket->accepted_at !== null) {
-                throw new BusinessRuleException('Ticket sudah diterima oleh '.($ticket->acceptor->name ?? 'pengguna lain').'. Muat ulang data terbaru.');
+                throw new BusinessRuleException('Laporan sudah diterima oleh '.($ticket->acceptor->name ?? 'pengguna lain').'. Muat ulang data terbaru.');
             }
 
             $this->guard->ensureActive($ticket);
